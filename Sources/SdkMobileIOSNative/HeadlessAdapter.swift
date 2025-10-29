@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 public class HeadlessAdapter {
@@ -5,6 +6,8 @@ public class HeadlessAdapter {
     private var loginController: LoginController
 
     private var delegate: HeadlessAdapterDelegate
+
+    private var cancellables = Set<AnyCancellable>()
 
     public init(nativeSDK: NativeSDK, delegate: HeadlessAdapterDelegate) {
         self.nativeSDK = nativeSDK
@@ -15,6 +18,29 @@ public class HeadlessAdapter {
         }
 
         self.loginController = loginController
+
+        self.loginController.$screen
+            .sink { [self] _ in
+                let currentScreen = self.getScreen()
+                DispatchQueue.main.async {
+                    if !nativeSDK.session.loginInProgress {
+                        return
+                    }
+
+                    let newScreen = self.getScreen()
+                    if
+                        currentScreen.screen == newScreen.screen,
+                        currentScreen.forms == newScreen.forms,
+                        currentScreen.layout == newScreen.layout,
+                        currentScreen.messages != newScreen.messages {
+                        delegate.refreshScreen(screen: getScreen())
+                        return
+                    }
+
+                    delegate.renderScreen(screen: getScreen())
+                }
+            }
+            .store(in: &cancellables)
     }
 
     public func initialize() {
@@ -33,25 +59,7 @@ public class HeadlessAdapter {
     }
 
     public func submit(formId: String, data: [String: Any]?) async {
-        let currentScreen = getScreen()
         await loginController.submit(formId: formId, formData: data)
-
-        if !nativeSDK.session.loginInProgress {
-            return
-        }
-
-        let newScreen = getScreen()
-
-        if
-            currentScreen.screen == newScreen.screen,
-            currentScreen.forms == newScreen.forms,
-            currentScreen.layout == newScreen.layout,
-            currentScreen.messages != newScreen.messages {
-            delegate.refreshScreen(screen: getScreen())
-            return
-        }
-
-        delegate.renderScreen(screen: getScreen())
     }
 
     func submitForm(formId: String) async {
