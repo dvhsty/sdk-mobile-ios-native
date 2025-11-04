@@ -40,6 +40,24 @@ public class NativeSDK {
     }
 
     public func login(
+        parameters: LoginParameters?
+    ) async throws -> Profile {
+        return try await withCheckedThrowingContinuation { continuation in
+            Task {
+                await login(
+                    parameters: parameters,
+                    onSuccess: {
+                        continuation.resume(returning: self.session.profile!)
+                    },
+                    onError: { err in
+                        continuation.resume(throwing: err)
+                    }
+                )
+            }
+        }
+    }
+
+    public func login(
         parameters: LoginParameters?,
         onSuccess: @escaping () -> Void,
         onError: @escaping (Error) -> Void
