@@ -113,7 +113,7 @@ public class NativeSDK {
             try await loginController.initialize()
             self.loginController = loginController
 
-            DispatchQueue.main.sync {
+            await MainActor.run {
                 self.session.loginInProgress = true
             }
         } catch {
@@ -130,7 +130,7 @@ public class NativeSDK {
             let parameters = try await oidcHandlerService.handleCall(url: uri)
             await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
         } catch {
-            DispatchQueue.main.sync {
+            await MainActor.run {
                 cleanup()
                 oidcParams.onError(NativeSDKError.unknownError(source: error))
             }
@@ -142,12 +142,10 @@ public class NativeSDK {
             return
         }
 
-        Task {
-            DispatchQueue.main.sync {
-                cleanup()
-                if let error = error {
-                    loginController.oidcParams.onError(error)
-                }
+        Task { @MainActor in
+            cleanup()
+            if let error = error {
+                loginController.oidcParams.onError(error)
             }
         }
     }
@@ -190,7 +188,7 @@ public class NativeSDK {
             do {
                 try await loginController.initialize()
             } catch {
-                DispatchQueue.main.sync {
+                await MainActor.run {
                     cleanup()
                     oidcParams.onError(NativeSDKError.unknownError(source: error))
                 }
@@ -202,7 +200,7 @@ public class NativeSDK {
         if let error = queryParameters["error"], let errorDescription = queryParameters["error_description"] {
             await session.clear()
 
-            DispatchQueue.main.sync {
+            await MainActor.run {
                 cleanup()
                 oidcParams.onError(NativeSDKError.oidcError(
                     error: error,
@@ -218,7 +216,7 @@ public class NativeSDK {
         }
 
         if state != oidcParams.state {
-            DispatchQueue.main.sync {
+            await MainActor.run {
                 cleanup()
                 oidcParams.onError(NativeSDKError.invalidCallback(reason: "State param did not matched expected value"))
             }
@@ -245,7 +243,7 @@ public class NativeSDK {
             }
 
             if nonce != oidcParams.nonce {
-                DispatchQueue.main.sync {
+                await MainActor.run {
                     cleanup()
                     oidcParams
                         .onError(NativeSDKError.invalidCallback(reason: "Nonce param did not matched expected value"))
@@ -255,12 +253,12 @@ public class NativeSDK {
 
             await session.update(tokenResponse: tokenResponse)
 
-            DispatchQueue.main.sync {
+            await MainActor.run {
                 cleanup()
                 oidcParams.onSuccess()
             }
         } catch {
-            DispatchQueue.main.sync {
+            await MainActor.run {
                 cleanup()
                 oidcParams.onError(NativeSDKError.unknownError(source: error))
             }
