@@ -104,7 +104,7 @@ public class LoginController: ObservableObject {
     }
 
     public func submit(formId: String) async {
-        DispatchQueue.main.sync {
+        await MainActor.run {
             processing = true
         }
 
