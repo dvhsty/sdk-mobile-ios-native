@@ -8,4 +8,6 @@ public enum NativeSDKError: Error {
 
     case httpError(statusCode: Int? = nil)
     case unknownError(source: Error? = nil)
+    
+    case revocationFailure(reason: String)
 }

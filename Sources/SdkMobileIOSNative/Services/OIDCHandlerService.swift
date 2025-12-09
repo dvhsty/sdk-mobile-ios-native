@@ -81,6 +81,20 @@ class OIDCHandlerService {
 
         return params
     }
+    
+    func revoke(issuer: URL, params: RevokeParams) async throws ->  Void {
+        let revokeEndpoint = issuer.appendingPathComponent("/oauth2/revoke")
+        
+        let response = try await httpService.post(
+            url: revokeEndpoint,
+            bodyContent: params.asFormData(),
+            contentType: "application/x-www-form-urlencoded"
+        )
+
+        if response.httpResponse.statusCode != 200 {
+            throw NativeSDKError.httpError(statusCode: response.httpResponse.statusCode)
+        }
+    }
 }
 
 struct OidcParams {
@@ -174,6 +188,31 @@ struct TokenRefreshParams {
 
         guard let data = urlComponents.percentEncodedQuery?.data(using: .utf8) else {
             assert(false, "Failed to prepare token refresh data")
+        }
+
+        return data
+    }
+}
+
+struct RevokeParams {
+    let clientId: String
+    let token: String
+    let tokenTypeHint: String
+
+    func asFormData() -> Data {
+        let params: [String: String] = [
+            "client_id": clientId,
+            "token": token,
+            "token_type_hint": tokenTypeHint
+        ]
+
+        var urlComponents = URLComponents()
+        urlComponents.queryItems = params.map { key, value in
+            URLQueryItem(name: key, value: value)
+        }
+
+        guard let data = urlComponents.percentEncodedQuery?.data(using: .utf8) else {
+            fatalError("Failed to prepare revoke data")
         }
 
         return data

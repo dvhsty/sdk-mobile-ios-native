@@ -218,6 +218,25 @@ public class NativeSDK {
         logging.info("Logout completed successfully")
     }
 
+    public func revoke() async throws {
+        let refreshToken = session.profile?.tokenResponse.refreshToken
+        let accessToken = session.profile?.tokenResponse.accessToken
+
+        let token = refreshToken != nil ? refreshToken : accessToken
+        
+        guard token != nil else {
+            return
+        }
+
+        let typeHint = refreshToken != nil ? "refresh_token" : "access_token"
+    
+        let revokeParams = RevokeParams(clientId: clientId, token: token!, tokenTypeHint: typeHint)
+
+        try await oidcHandlerService.revoke(issuer: issuer, params: revokeParams)
+        
+        await session.clear()
+    }
+
     public func isAuthenticated() async throws -> Bool {
         try await refreshTokensIfNeeded()
         return session.profile != nil
