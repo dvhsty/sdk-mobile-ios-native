@@ -4,11 +4,13 @@ class LoginHandlerService {
     private let httpService: HttpService
     private let issuer: URL
     private let sessionId: String
+    private let logging: Logging
 
-    init(httpService: HttpService, issuer: URL, sessionId: String) {
+    init(httpService: HttpService, issuer: URL, sessionId: String, logging: Logging) {
         self.httpService = httpService
         self.issuer = issuer
         self.sessionId = sessionId
+        self.logging = logging
     }
 
     func initCall() async throws -> Screen {
@@ -50,7 +52,7 @@ class LoginHandlerService {
         do {
             return try JSONDecoder().decode(Screen.self, from: data)
         } catch {
-            print("Failed to parse screen result:", error)
+            logging.warn("Failed to parse screen result: \(error.localizedDescription))")
             let fallbackScreen = try JSONDecoder().decode(FallbackSceen.self, from: data)
             return Screen(
                 screen: nil,

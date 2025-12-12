@@ -6,6 +6,7 @@ public class NativeSDK {
     let redirectURI: URL
     let postLogoutURI: URL
     let mode: SdkMode
+    let logging: Logging
 
     var loginController: LoginController?
 
@@ -20,18 +21,20 @@ public class NativeSDK {
         redirectURI: URL,
         postLogoutURI: URL,
         storage: Storage = KeyChain(),
-        mode: SdkMode = .ios
+        mode: SdkMode = .ios,
+        logging: Logging = DefaultLogging()
     ) {
         self.issuer = issuer
         self.clientId = clientId
         self.redirectURI = redirectURI
         self.postLogoutURI = postLogoutURI
         self.mode = mode
+        self.logging = logging
 
-        httpService = HttpService()
-        oidcHandlerService = OIDCHandlerService(httpService: httpService)
+        httpService = HttpService(logging: logging)
+        oidcHandlerService = OIDCHandlerService(httpService: httpService, logging: logging)
 
-        session = Session(storage: storage)
+        session = Session(storage: storage, logging: logging)
     }
 
     public func initializeSession() async throws {
@@ -62,6 +65,7 @@ public class NativeSDK {
         onSuccess: @escaping () -> Void,
         onError: @escaping (Error) -> Void
     ) async {
+        logging.info("Starting login flow")
         let oidcParams = OidcParams(
             onSuccess: onSuccess,
             onError: onError,
@@ -108,6 +112,7 @@ public class NativeSDK {
         ]
 
         guard let url = urlComponents.url else {
+            logging.debug("Unable to generate /auth url")
             assert(false, "Unable to generate /auth url")
         }
 
@@ -122,12 +127,14 @@ public class NativeSDK {
             let loginHandlerService = LoginHandlerService(
                 httpService: httpService,
                 issuer: issuer,
-                sessionId: sessionId
+                sessionId: sessionId,
+                logging: logging
             )
             let loginController = LoginController(
                 nativeSDK: self,
                 loginHandlerService: loginHandlerService,
-                oidcParams: oidcParams
+                oidcParams: oidcParams,
+                logging: logging
             )
 
             try await loginController.initialize()
@@ -137,6 +144,7 @@ public class NativeSDK {
                 self.session.loginInProgress = true
             }
         } catch {
+            logging.error("Failed to log in", error: error)
             onError(NativeSDKError.unknownError(source: error))
         }
     }
@@ -158,6 +166,14 @@ public class NativeSDK {
     }
 
     public func cancelFlow(error: NativeSDKError? = nil) {
+        logging.xEventId = nil
+
+        if let error = error {
+            logging.info("Cancelling login flow with error: \(error.localizedDescription)")
+        } else {
+            logging.info("Cancelling login flow")
+        }
+
         guard let loginController = loginController else {
             return
         }
@@ -171,13 +187,20 @@ public class NativeSDK {
     }
 
     public func logout() async throws {
+        defer {
+            logging.xEventId = nil
+        }
+
         let idToken = session.profile?.tokenResponse.idToken
 
         await session.clear()
 
         guard let idToken = idToken else {
+            logging.debug("Logout called without session")
             return
         }
+
+        logging.debug("Logging user out")
 
         let logoutEndpoint = issuer.appendingPathComponent("/oauth2/sessions/logout")
         var urlComponents = URLComponents(url: logoutEndpoint, resolvingAgainstBaseURL: false)!
@@ -187,10 +210,12 @@ public class NativeSDK {
         ]
 
         guard let url = urlComponents.url else {
+            logging.debug("Could not generate /logout url")
             assert(false, "Unable to generate /logout url")
         }
 
         try await oidcHandlerService.handleCall(url: url)
+        logging.info("Logout completed successfully")
     }
 
     public func isAuthenticated() async throws -> Bool {
@@ -259,10 +284,12 @@ public class NativeSDK {
             )
 
             guard let nonce = JWTUtils.parseJWT(tokenResponse.idToken)["nonce"] as? String else {
+                logging.debug("Nonce missing from response")
                 assert(false, "Nonce missing from response")
             }
 
             if nonce != oidcParams.nonce {
+                logging.debug("Nonce param did not match expected value")
                 await MainActor.run {
                     cleanup()
                     oidcParams
@@ -273,11 +300,13 @@ public class NativeSDK {
 
             await session.update(tokenResponse: tokenResponse)
 
+            logging.info("Login successful")
             await MainActor.run {
                 cleanup()
                 oidcParams.onSuccess()
             }
         } catch {
+            logging.error("Login attempt failed", error: error)
             await MainActor.run {
                 cleanup()
                 oidcParams.onError(NativeSDKError.unknownError(source: error))
@@ -286,13 +315,20 @@ public class NativeSDK {
     }
 
     private func refreshTokensIfNeeded() async throws {
-        guard
-            let accessTokenExpiresAt = session.profile?.accessTokenExpiresAt,
-            Date.now >= accessTokenExpiresAt else {
+        logging.debug("Attempting to refresh token")
+
+        guard let profile = session.profile else {
+            logging.debug("Token refresh not possible - session not found")
+            return
+        }
+
+        guard Date.now >= profile.accessTokenExpiresAt else {
+            logging.debug("Token refresh not needed - access token has not expired")
             return
         }
 
         guard let refreshToken = session.profile?.tokenResponse.refreshToken else {
+            logging.info("Cannot refresh token, signing user out due to expired access token")
             await session.clear()
             return
         }
@@ -304,8 +340,10 @@ public class NativeSDK {
             )
 
             await session.update(tokenResponse: refreshResponse)
+            logging.info("Session refreshed successfully")
             return
         } catch {
+            logging.debug("Could not refresh session due to error: \(error.localizedDescription)")
             await session.clear()
         }
     }
