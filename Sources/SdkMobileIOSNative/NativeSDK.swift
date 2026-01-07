@@ -223,17 +223,17 @@ public class NativeSDK {
         let accessToken = session.profile?.tokenResponse.accessToken
 
         let token = refreshToken != nil ? refreshToken : accessToken
-        
+
         guard token != nil else {
             return
         }
 
         let typeHint = refreshToken != nil ? "refresh_token" : "access_token"
-    
+
         let revokeParams = RevokeParams(clientId: clientId, token: token!, tokenTypeHint: typeHint)
 
         try await oidcHandlerService.revoke(issuer: issuer, params: revokeParams)
-        
+
         await session.clear()
     }
 

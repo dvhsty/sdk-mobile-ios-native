@@ -81,10 +81,10 @@ class OIDCHandlerService {
 
         return params
     }
-    
-    func revoke(issuer: URL, params: RevokeParams) async throws ->  Void {
+
+    func revoke(issuer: URL, params: RevokeParams) async throws {
         let revokeEndpoint = issuer.appendingPathComponent("/oauth2/revoke")
-        
+
         let response = try await httpService.post(
             url: revokeEndpoint,
             bodyContent: params.asFormData(),
@@ -203,7 +203,7 @@ struct RevokeParams {
         let params: [String: String] = [
             "client_id": clientId,
             "token": token,
-            "token_type_hint": tokenTypeHint
+            "token_type_hint": tokenTypeHint,
         ]
 
         var urlComponents = URLComponents()
