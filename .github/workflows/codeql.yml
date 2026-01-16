@@ -64,7 +64,7 @@ jobs:
 
     - run: |
         echo "Run, Build Application"
-        xcodebuild build -scheme SdkMobileIOSNative -sdk "`xcrun --sdk iphonesimulator --show-sdk-path`" -destination "OS=18.4,name=iPhone 16"
+        xcodebuild build -scheme SdkMobileIOSNative -sdk "`xcrun --sdk iphonesimulator --show-sdk-path`" -destination "platform=iOS Simulator,arch=arm64,name=iPhone 16"
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
