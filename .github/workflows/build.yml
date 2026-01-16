@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -13,8 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Wait for simulators
+        run: xcrun simctl list
       - name: Build
-        run: xcodebuild build -scheme SdkMobileIOSNative -sdk "`xcrun --sdk iphonesimulator --show-sdk-path`" -destination "name=iPhone 16"
+        run: xcodebuild build -scheme SdkMobileIOSNative -sdk "`xcrun --sdk iphonesimulator --show-sdk-path`" -destination "platform=iOS Simulator,arch=arm64,name=iPhone 16"
 
       - name: Run tests
-        run: xcodebuild test -scheme SdkMobileIOSNative -sdk "`xcrun --sdk iphonesimulator --show-sdk-path`" -destination "platform=iOS Simulator,name=iPhone 16"
+        run: xcodebuild test -scheme SdkMobileIOSNative -sdk "`xcrun --sdk iphonesimulator --show-sdk-path`" -destination "platform=iOS Simulator,arch=arm64,name=iPhone 16"

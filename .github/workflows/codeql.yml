@@ -38,6 +38,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+    - name: Wait for simulators
+      run: xcrun simctl list  
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
@@ -61,10 +63,9 @@ jobs:
 
     #   If the Autobuild fails above, remove it and uncomment the following three lines.
     #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
-
     - run: |
         echo "Run, Build Application"
-        xcodebuild build -scheme SdkMobileIOSNative -sdk "`xcrun --sdk iphonesimulator --show-sdk-path`" -destination "OS=18.4,name=iPhone 16"
+        xcodebuild build -scheme SdkMobileIOSNative -sdk "`xcrun --sdk iphonesimulator --show-sdk-path`" -destination "platform=iOS Simulator,arch=arm64,name=iPhone 16"
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
