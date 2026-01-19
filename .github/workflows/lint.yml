@@ -16,6 +16,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Wait for simulators
+        run: xcrun simctl list      
 
       - name: Set up Homebrew
         id: set-up-homebrew
@@ -28,5 +31,5 @@ jobs:
       - run: swiftlint lint .
 
       - run: swiftformat --lint .
-
+      
       - run: .github/workflows/unused-variables.sh
