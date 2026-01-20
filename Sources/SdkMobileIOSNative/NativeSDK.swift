@@ -74,17 +74,37 @@ public class NativeSDK {
         urlComponents.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "redirect_uri", value: redirectURI.absoluteString),
+            URLQueryItem(
+                name: "redirect_uri",
+                value: redirectURI.absoluteString
+            ),
             URLQueryItem(name: "state", value: oidcParams.state),
             URLQueryItem(name: "nonce", value: oidcParams.nonce),
-            URLQueryItem(name: "code_challenge", value: oidcParams.codeChallenge),
+            URLQueryItem(
+                name: "code_challenge",
+                value: oidcParams.codeChallenge
+            ),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
 
-            URLQueryItem(name: "scope", value: (parameters?.scopes ?? ["openid", "profile"]).joined(separator: " ")),
+            URLQueryItem(
+                name: "scope",
+                value: (parameters?.scopes ?? ["openid", "profile"]).joined(
+                    separator: " "
+                )
+            ),
             URLQueryItem(name: "acr_values", value: parameters?.acrValue),
             URLQueryItem(name: "login_hint", value: parameters?.loginHint),
             URLQueryItem(name: "prompt", value: parameters?.prompt),
             URLQueryItem(name: "sdk", value: mode.rawValue),
+            URLQueryItem(
+                name: "audience",
+                value: parameters?.audiences?.map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                .filter { !$0.isEmpty }
+                .nilIfEmpty?
+                .joined(separator: " ")
+            ),
         ]
 
         guard let url = urlComponents.url else {
@@ -302,23 +322,32 @@ public struct LoginParameters {
         loginHint: String? = nil,
         acrValue: String? = nil,
         scopes: [String]? = nil,
-        prefersEphemeralWebBrowserSession: Bool = false
+        prefersEphemeralWebBrowserSession: Bool = false,
+        audiences: [String]? = nil
     ) {
         self.prompt = prompt
         self.loginHint = loginHint
         self.acrValue = acrValue
         self.scopes = scopes
         self.prefersEphemeralWebBrowserSession = prefersEphemeralWebBrowserSession
+        self.audiences = audiences
     }
 
-    var prompt: String?
-    var loginHint: String?
-    var acrValue: String?
-    var scopes: [String]?
-    var prefersEphemeralWebBrowserSession: Bool
+    let prompt: String?
+    let loginHint: String?
+    let acrValue: String?
+    let scopes: [String]?
+    let prefersEphemeralWebBrowserSession: Bool
+    let audiences: [String]?
 }
 
 public enum SdkMode: String {
     case ios
     case iosMinimal = "ios-minimal"
+}
+
+extension Array {
+    var nilIfEmpty: [Element]? {
+        isEmpty ? nil : self
+    }
 }
