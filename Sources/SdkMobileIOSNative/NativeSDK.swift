@@ -224,13 +224,13 @@ public class NativeSDK {
 
         let token = refreshToken != nil ? refreshToken : accessToken
 
-        guard token != nil else {
+        guard let token = token else {
             return
         }
 
         let typeHint = refreshToken != nil ? "refresh_token" : "access_token"
 
-        let revokeParams = RevokeParams(clientId: clientId, token: token!, tokenTypeHint: typeHint)
+        let revokeParams = RevokeParams(clientId: clientId, token: token, tokenTypeHint: typeHint)
 
         try await oidcHandlerService.revoke(issuer: issuer, params: revokeParams)
 
