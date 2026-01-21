@@ -300,6 +300,7 @@ public class NativeSDK {
 
             await session.update(tokenResponse: tokenResponse)
 
+            logging.xEventId = nil
             logging.info("Login successful")
             await MainActor.run {
                 cleanup()
