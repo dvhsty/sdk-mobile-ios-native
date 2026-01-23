@@ -12,8 +12,15 @@ class HttpService {
 
     private let session: URLSession
 
-    init() {
-        session = URLSession(configuration: .default, delegate: HttpSessionDelegate(), delegateQueue: .main)
+    private let logging: Logging
+
+    init(logging: Logging) {
+        self.logging = logging
+        session = URLSession(
+            configuration: .default,
+            delegate: HttpSessionDelegate(logging: logging),
+            delegateQueue: .main
+        )
     }
 
     func get(url: URL, acceptHeader: String = "application/json") async throws -> HttpResponse {
@@ -70,15 +77,30 @@ class HttpService {
     }
 
     private func dataExchange(request: URLRequest) async throws -> HttpResponse {
+        logging
+            .debug(
+                "REQUEST [\(request.httpMethod ?? "")]: \(request.url?.path ?? "")"
+            )
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NativeSDKError.httpError(statusCode: -1)
         }
 
+        if let xEventIdHeader = httpResponse.value(forHTTPHeaderField: "x-event-id"),
+           logging.xEventId != xEventIdHeader {
+            logging.xEventId = xEventIdHeader
+            logging.debug("X-Event-ID updated: \(xEventIdHeader)")
+        }
         return HttpResponse(httpResponse: httpResponse, data: data)
     }
 
     private class HttpSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
+        private let logging: Logging
+
+        init(logging: Logging) {
+            self.logging = logging
+        }
+
         func urlSession(
             _: URLSession,
             task _: URLSessionTask,
@@ -87,8 +109,13 @@ class HttpService {
             completionHandler: @escaping (URLRequest?) -> Void
         ) {
             if request.url?.scheme == "https" {
+                logging.debug("Redirect to \(request.url?.path ?? "")")
                 completionHandler(request)
             } else {
+                logging
+                    .debug(
+                        "Redirect to \(request.url?.scheme ?? "")://\(request.url?.host ?? "")/\(request.url?.path ?? "")"
+                    )
                 completionHandler(nil)
             }
         }

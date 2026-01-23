@@ -11,11 +11,13 @@ public class LoginController: ObservableObject {
     var oidcParams: OidcParams
 
     let authWebView = AuthWebView()
+    private let logging: Logging
 
-    init(nativeSDK: NativeSDK, loginHandlerService: LoginHandlerService, oidcParams: OidcParams) {
+    init(nativeSDK: NativeSDK, loginHandlerService: LoginHandlerService, oidcParams: OidcParams, logging: Logging) {
         self.nativeSDK = nativeSDK
         self.loginHandlerService = loginHandlerService
         self.oidcParams = oidcParams
+        self.logging = logging
     }
 
     func initialize() async throws {
@@ -29,11 +31,14 @@ public class LoginController: ObservableObject {
         }
 
         if let finalizeUrl = screen.finalizeUrl {
+            logging.debug("Finalizing login flow")
             await nativeSDK.continueFlow(uri: URL(string: finalizeUrl)!)
             return
         }
 
         if let hostedUrl = screen.hostedUrl, screen.forms == nil, screen.messages == nil {
+            logging.info("Opening browser with url: \(hostedUrl)")
+
             authWebView.open(
                 hostedURL: URL(string: hostedUrl)!,
                 customURIScheme: nativeSDK.redirectURI.scheme!,
@@ -57,10 +62,12 @@ public class LoginController: ObservableObject {
         }
 
         if let forms = screen.forms {
+            logging.info("Displaying screen: \(screen.screen ?? "")")
             self.screen = screen
             formModel = FormModel(formWidgets: forms)
         } else if let messages = screen.messages {
-            self.screen?.messages = screen.messages
+            logging.info("Updating screen: \(self.screen?.screen ?? "")")
+            self.screen?.messages = messages
         }
     }
 
@@ -82,7 +89,12 @@ public class LoginController: ObservableObject {
         })
     }
 
-    public func triggerFallback() async {
+    public func triggerFallback(_ error: Error? = nil) async {
+        if let error = error {
+            logging.warn("Triggering fallback due to: \(error.localizedDescription)")
+        } else {
+            logging.warn("Triggering client initated fallback")
+        }
         await updateScreen(screen: Screen(
             screen: nil,
             branding: nil,
@@ -119,7 +131,7 @@ public class LoginController: ObservableObject {
         } catch NativeSDKError.sessionExpired {
             nativeSDK.cancelFlow(error: NativeSDKError.sessionExpired)
         } catch {
-            await triggerFallback()
+            await triggerFallback(error)
         }
     }
 }

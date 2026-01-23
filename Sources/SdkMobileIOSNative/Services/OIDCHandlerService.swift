@@ -2,20 +2,25 @@ import Foundation
 
 class OIDCHandlerService {
     private let httpService: HttpService
+    private let logging: Logging
 
-    init(httpService: HttpService) {
+    init(httpService: HttpService, logging: Logging) {
         self.httpService = httpService
+        self.logging = logging
     }
 
     func handleCall(url: URL) async throws -> [String: String] {
+        logging.debug("Handling call to: \(url.scheme ?? "unkown")://\(url.host ?? "")\(url.path)")
         var location: String
         if url.scheme == "https" {
             let response = try await httpService.get(url: url, acceptHeader: "text/html")
+            let responseStatusCode: Int = response.httpResponse.statusCode
             guard
-                (response.httpResponse.statusCode == 200 && response.httpResponse.url?.host == url.host && response
+                (responseStatusCode == 200 && response.httpResponse.url?.host == url.host && response
                     .httpResponse.url?.path == "/oauth2/error")
                 || response.httpResponse.statusCode == 302
                 || response.httpResponse.statusCode == 303 else {
+                logging.debug("Unexpected response with status code: [\(responseStatusCode)]")
                 throw NativeSDKError.httpError(statusCode: response.httpResponse.statusCode)
             }
 
