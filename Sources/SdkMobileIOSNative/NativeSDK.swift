@@ -15,6 +15,8 @@ public class NativeSDK {
     private let httpService: HttpService
     private let oidcHandlerService: OIDCHandlerService
 
+    private var entryFlowTask: (task: Task<Void, Error>, continuation: CheckedContinuation<Void, Error>)?
+
     public init(
         issuer: URL,
         clientId: String,
@@ -120,15 +122,16 @@ public class NativeSDK {
             let parameters = try await oidcHandlerService.handleCall(url: url)
 
             guard let sessionId = parameters["session_id"] else {
+                logging.info("Attempting to continue flow")
                 try await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
                 return
             }
+            logging.info("No session ID is present, creating loginController")
 
             let loginHandlerService = LoginHandlerService(
                 httpService: httpService,
                 issuer: issuer,
-                sessionId: sessionId,
-                logging: logging
+                sessionId: sessionId
             )
             let loginController = LoginController(
                 nativeSDK: self,
@@ -149,8 +152,137 @@ public class NativeSDK {
         }
     }
 
+    public func entry(entryUrl: URL) async throws {
+        defer {
+            logging.debug("Cleaning up entry")
+            Task { @MainActor in
+                cleanup()
+            }
+            entryFlowTask = nil
+        }
+
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                startEntryTask(entryUrl: entryUrl, continuation: continuation)
+            }
+        } onCancel: {
+            logging.debug("Entry flow cancelled")
+            entryFlowTask?.continuation.resume(throwing: CancellationError())
+        }
+    }
+
+    private func startEntryTask(entryUrl: URL, continuation: CheckedContinuation<Void, Error>) {
+        // exit from current flow if exists
+        cancelFlow()
+
+        // start new flow
+        let newEntryTask = Task {
+            let entryComponents = URLComponents(url: entryUrl, resolvingAgainstBaseURL: false)
+            guard let challengeItem = entryComponents?.queryItems?.first(where: { $0.name == "challenge" }) else {
+                throw NativeSDKError
+                    .genericError(message: "Expected mandatory challenge parameter but was not provided")
+            }
+
+            let requestUrlBase = issuer.appendingPathComponent("/provider/flow/entry")
+            var requestComponents = URLComponents(url: requestUrlBase, resolvingAgainstBaseURL: false)!
+            requestComponents.queryItems = [
+                URLQueryItem(name: "client_id", value: clientId),
+                URLQueryItem(name: "redirect_uri", value: redirectURI.absoluteString),
+                challengeItem,
+            ]
+
+            guard let requestUrl = requestComponents.url else {
+                throw NativeSDKError.genericError(message: "Could not generate URL for entry")
+            }
+
+            let response = try await httpService.get(url: requestUrl, acceptHeader: "*/*")
+            let statusCode = response.httpResponse.statusCode
+
+            guard case 200 ..< 400 = statusCode else {
+                if statusCode == 400 {
+                    let decodedError = try JSONDecoder().decode(EntryErrorEnvelope.self, from: response.data)
+                    throw NativeSDKError.workflowError(
+                        error: decodedError.error,
+                        errorDescription: decodedError.errorDescription
+                    )
+                }
+                logging.warn("Failed to enter login flow")
+                logging
+                    .debug(
+                        "This might be cause by Client misconfiguration. Ensure that authentication client has entry URL configured."
+                    )
+                throw NativeSDKError.httpError(statusCode: statusCode)
+            }
+
+            let sessionId = try extractSessionId(fromResponse: response)
+
+            // build loginController for sessionId
+            let loginHandlerService = LoginHandlerService(
+                httpService: httpService,
+                issuer: issuer,
+                sessionId: sessionId
+            )
+            let loginController = LoginController(
+                nativeSDK: self,
+                loginHandlerService: loginHandlerService,
+                oidcParams: OidcParams(
+                    onSuccess: {
+                        self.logging.debug("Entry flow completed successfully")
+                        self.closeEntryFlow()
+                    },
+                    onError: { err in
+                        self.logging.debug("Entry flow completed exceptionally")
+                        self.closeEntryFlow(throwing: err)
+
+                    },
+                    prefersEphemeralWebBrowserSession: false
+                ),
+                logging: logging
+            )
+            self.loginController = loginController
+
+            // submit init form with sessionId
+            try await loginController.initialize()
+
+            await MainActor.run {
+                session.loginInProgress = true
+            }
+        }
+        entryFlowTask = (task: newEntryTask, continuation: continuation)
+    }
+
+    private func extractSessionId(fromResponse response: HttpResponse) throws -> String {
+        guard let locationHeader = response.httpResponse.value(forHTTPHeaderField: "Location") else {
+            throw NativeSDKError.genericError(message: "Expected Location header not found")
+        }
+
+        guard let locationUrl = URL(string: locationHeader) else {
+            throw NativeSDKError.genericError(message: "Location header could not be parsed")
+        }
+
+        guard let sessionParam = URLComponents(url: locationUrl, resolvingAgainstBaseURL: false)?.queryItems?
+            .first(where: { $0.name == "session_id" }),
+            let sessionValue = sessionParam.value else {
+            throw NativeSDKError.genericError(message: "SessionID parameter not found")
+        }
+
+        return sessionValue
+    }
+
+    func closeEntryFlow(throwing: Error? = nil) {
+        // will also run entry's defer block once continuation is resumed
+        // cleanup happens there
+        if let error = throwing {
+            entryFlowTask?.continuation.resume(throwing: error)
+        } else {
+            entryFlowTask?.continuation.resume()
+        }
+        entryFlowTask = nil
+    }
+
     public func continueFlow(uri: URL) async {
         guard let oidcParams = loginController?.oidcParams else {
+            logging.info("loginController is null")
             assert(false, "Called continueFlow in invalid state")
         }
 
@@ -166,12 +298,17 @@ public class NativeSDK {
     }
 
     public func cancelFlow(error: NativeSDKError? = nil) {
+        // reset logging correlation state
         logging.xEventId = nil
 
         if let error = error {
-            logging.info("Cancelling login flow with error: \(error.localizedDescription)")
+            logging.info("Cancelling flow with error: \(error.localizedDescription)")
         } else {
-            logging.info("Cancelling login flow")
+            logging.info("Cancelling flow")
+        }
+
+        if let entryFlowTask = entryFlowTask {
+            entryFlowTask.continuation.resume(throwing: CancellationError())
         }
 
         guard let loginController = loginController else {
@@ -250,6 +387,7 @@ public class NativeSDK {
     private func continueFlow(oidcParams: OidcParams, queryParameters: [String: String]) async {
         if let loginController = loginController, let sessionId = queryParameters["session_id"] {
             do {
+                logging.info("Attempting to initialize loginController")
                 try await loginController.initialize()
             } catch {
                 await MainActor.run {
@@ -259,6 +397,8 @@ public class NativeSDK {
             }
 
             return
+        } else {
+            logging.info("loginController is null or sessionId does not exist")
         }
 
         if let error = queryParameters["error"], let errorDescription = queryParameters["error_description"] {
@@ -371,6 +511,16 @@ public class NativeSDK {
     private func cleanup() {
         session.loginInProgress = false
         loginController = nil
+    }
+
+    private struct EntryErrorEnvelope: Decodable {
+        let error: String
+        let errorDescription: String
+
+        private enum CodingKeys: String, CodingKey {
+            case error
+            case errorDescription = "error_description"
+        }
     }
 }
 

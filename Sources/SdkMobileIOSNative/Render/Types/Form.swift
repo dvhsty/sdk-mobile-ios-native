@@ -180,6 +180,16 @@ public struct DateWidget: Decodable, Equatable {
     }
 }
 
+public struct CloseWidget: Decodable, Equatable {
+    public let id: String
+    public let label: String?
+    public let render: Render?
+
+    public struct Render: Decodable, Equatable {
+        public let type: String
+    }
+}
+
 public enum Widget {
     case form(FormWidget)
     case submit(SubmitWidget)
@@ -193,6 +203,7 @@ public enum Widget {
     case passcode(PasscodeWidget)
     case phone(PhoneWidget)
     case date(DateWidget)
+    case close(CloseWidget)
 }
 
 extension Widget: Decodable, Equatable {
@@ -227,6 +238,8 @@ extension Widget: Decodable, Equatable {
             self = try .phone(PhoneWidget(from: decoder))
         case "date":
             self = try .date(DateWidget(from: decoder))
+        case "close":
+            self = try .close(CloseWidget(from: decoder))
         default:
             throw ParsingError.widget(type: type)
         }
@@ -258,6 +271,8 @@ public extension Widget {
             widget.id
         case let .date(widget):
             widget.id
+        case let .close(widget):
+            widget.id
         }
     }
 
@@ -285,6 +300,8 @@ public extension Widget {
             widget.value
         case let .date(widget):
             widget.value
+        case .close:
+            nil
         }
     }
 
@@ -312,6 +329,8 @@ public extension Widget {
             widget.readonly
         case let .date(widget):
             widget.readonly
+        case .close:
+            false
         }
     }
 }

@@ -9,7 +9,6 @@ public class LoginController: ObservableObject {
     var nativeSDK: NativeSDK
     var loginHandlerService: LoginHandlerService
     var oidcParams: OidcParams
-
     let authWebView = AuthWebView()
     private let logging: Logging
 
@@ -20,8 +19,8 @@ public class LoginController: ObservableObject {
         self.logging = logging
     }
 
-    func initialize() async throws {
-        try await updateScreen(screen: await loginHandlerService.initCall())
+    func initialize() async throws -> Void {
+        let _ = try await updateScreen(screen: await loginHandlerService.initCall())
     }
 
     @MainActor
@@ -133,5 +132,11 @@ public class LoginController: ObservableObject {
         } catch {
             await triggerFallback(error)
         }
+    }
+
+    /// Invoked by CloseWidget when entry flow completes
+    public func closeEntryFlow() async throws {
+        logging.debug("Closing entry flow")
+        nativeSDK.closeEntryFlow()
     }
 }

@@ -41,12 +41,12 @@ public class Session: ObservableObject {
         logging.debug("Profile successfully updated")
     }
 
+    /// Invalidates session and clears locally stored session information
     @MainActor
     func clear() {
         logging.debug("Session cleared")
         loginInProgress = false
         profile = nil
-
         storage.delete(key: "profile")
     }
 }
