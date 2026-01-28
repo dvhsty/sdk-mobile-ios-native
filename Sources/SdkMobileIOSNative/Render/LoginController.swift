@@ -19,8 +19,8 @@ public class LoginController: ObservableObject {
         self.logging = logging
     }
 
-    func initialize() async throws -> Void {
-        let _ = try await updateScreen(screen: await loginHandlerService.initCall())
+    func initialize() async throws {
+        try await updateScreen(screen: await loginHandlerService.initCall())
     }
 
     @MainActor

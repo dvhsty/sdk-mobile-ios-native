@@ -72,7 +72,7 @@ public class HeadlessAdapter {
     }
 }
 
-public protocol HeadlessAdapterDelegate: class {
+public protocol HeadlessAdapterDelegate: AnyObject {
     func renderScreen(screen: Screen)
     func refreshScreen(screen: Screen)
 }
