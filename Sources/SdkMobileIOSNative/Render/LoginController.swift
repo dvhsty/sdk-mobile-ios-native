@@ -80,7 +80,7 @@ public class LoginController: ObservableObject {
         }
     }
 
-    public func bindingForWidget<T>(formId: String, widgetId: String, defaultValue: T) -> Binding<T> where T: Codable {
+    public func bindingForWidget<T: Codable>(formId: String, widgetId: String, defaultValue: T) -> Binding<T> {
         return Binding(get: { [self] in
             return formModel?.forms[formId]?[widgetId] as? T ?? defaultValue
         }, set: { [self] in

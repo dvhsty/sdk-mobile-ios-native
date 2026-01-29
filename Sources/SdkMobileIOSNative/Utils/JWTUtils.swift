@@ -7,9 +7,7 @@ class JWTUtils {
         assert(sections.count == 3, "Invalid JWT returned")
 
         let header = parseBase64Section(section: sections[0])
-        let body = parseBase64Section(section: sections[1])
-
-        return body
+        return parseBase64Section(section: sections[1])
     }
 
     private static func parseBase64Section(section: String) -> [String: Any] {

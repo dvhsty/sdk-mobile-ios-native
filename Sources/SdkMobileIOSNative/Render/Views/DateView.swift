@@ -125,7 +125,7 @@ struct DateView: View {
 
         let components = [("year", "y"), ("month", "M"), ("day", "d")]
 
-        let orderedComponents = components
+        return components
             .compactMap { name, symbol -> (String, Int)? in
                 if let index = format.firstIndex(of: Character(symbol)) {
                     return (name, format.distance(from: format.startIndex, to: index))
@@ -134,8 +134,6 @@ struct DateView: View {
             }
             .sorted { $0.1 < $1.1 }
             .map { $0.0 }
-
-        return orderedComponents
     }
 
     private func loadExistingDate() {
