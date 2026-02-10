@@ -49,7 +49,7 @@ public class NativeSDK {
     ) async throws -> Profile {
         return try await withCheckedThrowingContinuation { continuation in
             Task {
-                await login(
+                try await login(
                     parameters: parameters,
                     onSuccess: {
                         continuation.resume(returning: self.session.profile!)
@@ -114,8 +114,8 @@ public class NativeSDK {
         ]
 
         guard let url = urlComponents.url else {
-            logging.debug("Unable to generate /auth url")
-            assert(false, "Unable to generate /auth url")
+            onError(NativeSDKError.technical(message: "Unable to generate /auth url"))
+            return
         }
 
         do {
@@ -296,15 +296,14 @@ public class NativeSDK {
         }
     }
 
-    public func continueFlow(uri: URL) async {
+    public func continueFlow(uri: URL) async throws {
         guard let oidcParams = loginController?.oidcParams else {
-            logging.info("loginController is null")
-            assert(false, "Called continueFlow in invalid state")
+            throw NativeSDKError.technical(message: "Called continueFlow in invalid state")
         }
 
         do {
             let parameters = try await oidcHandlerService.handleCall(url: uri)
-            await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
+            try await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
         } catch {
             await MainActor.run {
                 cleanup()
@@ -363,8 +362,7 @@ public class NativeSDK {
         ]
 
         guard let url = urlComponents.url else {
-            logging.debug("Could not generate /logout url")
-            assert(false, "Unable to generate /logout url")
+            throw NativeSDKError.technical(message: "Could not generate /logout url")
         }
 
         let redirectUrl = try await oidcHandlerService.logout(url: url)
@@ -408,7 +406,7 @@ public class NativeSDK {
         return session.profile?.tokenResponse.accessToken
     }
 
-    private func continueFlow(oidcParams: OidcParams, queryParameters: [String: String]) async {
+    private func continueFlow(oidcParams: OidcParams, queryParameters: [String: String]) async throws {
         if let loginController = loginController, let sessionId = queryParameters["session_id"] {
             do {
                 logging.info("Attempting to initialize loginController")
@@ -440,7 +438,7 @@ public class NativeSDK {
         }
 
         guard let state = queryParameters["state"] else {
-            assert(false, "State missing from response")
+            throw NativeSDKError.technical(message: "Parameter `state` missing from response")
         }
 
         if state != oidcParams.state {
@@ -452,7 +450,7 @@ public class NativeSDK {
         }
 
         guard let code = queryParameters["code"] else {
-            assert(false, "Code missing from response")
+            throw NativeSDKError.technical(message: "Parameter `code` missing from response")
         }
 
         do {
@@ -466,9 +464,8 @@ public class NativeSDK {
                 )
             )
 
-            guard let nonce = JWTUtils.parseJWT(tokenResponse.idToken)["nonce"] as? String else {
-                logging.debug("Nonce missing from response")
-                assert(false, "Nonce missing from response")
+            guard let nonce = try JWTUtils.parseJWT(tokenResponse.idToken)["nonce"] as? String else {
+                throw NativeSDKError.technical(message: "Nonce missing from response")
             }
 
             if nonce != oidcParams.nonce {
@@ -481,7 +478,7 @@ public class NativeSDK {
                 return
             }
 
-            await session.update(tokenResponse: tokenResponse)
+            try await session.update(tokenResponse: tokenResponse)
 
             logging.xEventId = nil
             logging.info("Login successful")
@@ -523,7 +520,7 @@ public class NativeSDK {
                 params: TokenRefreshParams(refreshToken: refreshToken, clientId: clientId)
             )
 
-            await session.update(tokenResponse: refreshResponse)
+            try await session.update(tokenResponse: refreshResponse)
             logging.info("Session refreshed successfully")
             return
         } catch {

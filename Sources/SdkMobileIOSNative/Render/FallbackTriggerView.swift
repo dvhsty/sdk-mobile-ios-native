@@ -8,7 +8,11 @@ public struct FallbackTriggerView: View {
     public var body: some View {
         VStack {}
             .task {
-                await loginController.triggerFallback()
+                do {
+                    try await loginController.triggerFallback()
+                } catch {
+                    print("Could not trigger fallback: \(error)")
+                }
             }
     }
 }

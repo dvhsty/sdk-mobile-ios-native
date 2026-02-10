@@ -1,16 +1,14 @@
 import Foundation
 
 class JWTUtils {
-    static func parseJWT(_ jwt: String) -> [String: Any] {
+    static func parseJWT(_ jwt: String) throws -> [String: Any] {
         let sections = jwt.components(separatedBy: ".")
 
-        assert(sections.count == 3, "Invalid JWT returned")
-
-        let header = parseBase64Section(section: sections[0])
-        return parseBase64Section(section: sections[1])
+        let header = try parseBase64Section(section: sections[0])
+        return try parseBase64Section(section: sections[1])
     }
 
-    private static func parseBase64Section(section: String) -> [String: Any] {
+    private static func parseBase64Section(section: String) throws -> [String: Any] {
         var base64 = section
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
@@ -23,7 +21,7 @@ class JWTUtils {
             let encodedData = base64.data(using: .utf8),
             let data = Data(base64Encoded: encodedData),
             let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-            assert(false, "Unable to parse the JWT content")
+            throw NativeSDKError.technical(message: "Unable to parse JWT contents")
         }
 
         return json

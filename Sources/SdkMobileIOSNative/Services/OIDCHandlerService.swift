@@ -42,7 +42,7 @@ class OIDCHandlerService {
         }
 
         guard let locationUrl = URL(string: location) else {
-            assert(false, "Invalid location retrieved")
+            throw NativeSDKError.technical(message: "Location url could not be parsed", details: ["url": location])
         }
         return getQueryParameters(from: locationUrl)
     }
@@ -163,7 +163,7 @@ struct TokenExchangeParams {
         nonce = OIDCParamGenerator.generateNonce()
     }
 
-    func asFormData() -> Data {
+    func asFormData() throws -> Data {
         let params: [String: String] = [
             "grant_type": "authorization_code",
             "code": code,
@@ -179,7 +179,7 @@ struct TokenExchangeParams {
         }
 
         guard let data = urlComponents.percentEncodedQuery?.data(using: .utf8) else {
-            assert(false, "Failed to prepare token request data")
+            throw NativeSDKError.technical(message: "Failed to prepare token exchange request data")
         }
 
         return data
@@ -190,7 +190,7 @@ struct TokenRefreshParams {
     let refreshToken: String
     let clientId: String
 
-    func asFormData() -> Data {
+    func asFormData() throws -> Data {
         let params: [String: String] = [
             "grant_type": "refresh_token",
             "client_id": clientId,
@@ -203,7 +203,7 @@ struct TokenRefreshParams {
         }
 
         guard let data = urlComponents.percentEncodedQuery?.data(using: .utf8) else {
-            assert(false, "Failed to prepare token refresh data")
+            throw NativeSDKError.technical(message: "Failed to prepare token refresh request data")
         }
 
         return data
@@ -215,7 +215,7 @@ struct RevokeParams {
     let token: String
     let tokenTypeHint: String
 
-    func asFormData() -> Data {
+    func asFormData() throws -> Data {
         let params: [String: String] = [
             "client_id": clientId,
             "token": token,
@@ -228,7 +228,7 @@ struct RevokeParams {
         }
 
         guard let data = urlComponents.percentEncodedQuery?.data(using: .utf8) else {
-            fatalError("Failed to prepare revoke data")
+            throw NativeSDKError.technical(message: "Failed to prepare revoke request data")
         }
 
         return data

@@ -24,14 +24,14 @@ public class LoginController: ObservableObject {
     }
 
     @MainActor
-    func updateScreen(screen: Screen) async {
+    func updateScreen(screen: Screen) async throws {
         DispatchQueue.main.async {
             self.processing = false
         }
 
         if let finalizeUrl = screen.finalizeUrl {
             logging.debug("Finalizing login flow")
-            await nativeSDK.continueFlow(uri: URL(string: finalizeUrl)!)
+            try await nativeSDK.continueFlow(uri: URL(string: finalizeUrl)!)
             return
         }
 
@@ -44,7 +44,7 @@ public class LoginController: ObservableObject {
                 prefersEphemeralWebBrowserSession: oidcParams.prefersEphemeralWebBrowserSession
             ) { redirectURLScheme in
                 Task {
-                    await self.nativeSDK.continueFlow(uri: redirectURLScheme)
+                    try await self.nativeSDK.continueFlow(uri: redirectURLScheme)
                 }
             } errorCallback: { error in
                 if let error = error as? NSError {
@@ -92,13 +92,13 @@ public class LoginController: ObservableObject {
         })
     }
 
-    public func triggerFallback(_ error: Error? = nil) async {
+    public func triggerFallback(_ error: Error? = nil) async throws {
         if let error = error {
             logging.warn("Triggering fallback due to: \(error.localizedDescription)")
         } else {
             logging.warn("Triggering client initated fallback")
         }
-        await updateScreen(screen: Screen(
+        try await updateScreen(screen: Screen(
             screen: nil,
             branding: nil,
             hostedUrl: screen?.hostedUrl,
@@ -134,7 +134,11 @@ public class LoginController: ObservableObject {
         } catch NativeSDKError.sessionExpired {
             nativeSDK.cancelFlow(error: NativeSDKError.sessionExpired)
         } catch {
-            await triggerFallback(error)
+            do {
+                try await triggerFallback(error)
+            } catch {
+                print("Could not trigger fallback: \(error)")
+            }
         }
     }
 

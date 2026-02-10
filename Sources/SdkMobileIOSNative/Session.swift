@@ -25,18 +25,16 @@ public class Session: ObservableObject {
     }
 
     @MainActor
-    func update(tokenResponse: TokenResponse) {
+    func update(tokenResponse: TokenResponse) throws {
         loginInProgress = false
-        profile = Profile(tokenResponse: tokenResponse)
+        profile = try Profile(tokenResponse: tokenResponse)
 
         guard let profileData = try? String(decoding: JSONEncoder().encode(profile), as: UTF8.self) else {
-            logging.debug("Failed to serialize session content")
-            assert(false, "Failed to serialize session content")
+            throw NativeSDKError.technical(message: "Failed to serialize session content")
         }
 
         guard storage.set(key: "profile", value: profileData) else {
-            logging.debug("Failed to store content to storage")
-            assert(false, "Failed to store content to storage")
+            throw NativeSDKError.technical(message: "Failed to store content to storage")
         }
         logging.debug("Profile successfully updated")
     }
@@ -62,11 +60,11 @@ public struct Profile: Codable {
 
     public internal(set) var claims: [String: Any]
 
-    init(tokenResponse: TokenResponse) {
+    init(tokenResponse: TokenResponse) throws {
         self.tokenResponse = tokenResponse
         accessTokenExpiresAt = Date(timeIntervalSinceNow: Double(tokenResponse.expiresIn))
 
-        claims = JWTUtils.parseJWT(tokenResponse.idToken)
+        claims = try JWTUtils.parseJWT(tokenResponse.idToken)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -74,6 +72,6 @@ public struct Profile: Codable {
         tokenResponse = try container.decode(TokenResponse.self, forKey: .tokenResponse)
         accessTokenExpiresAt = try container.decode(Date.self, forKey: .accessTokenExpiresAt)
 
-        claims = JWTUtils.parseJWT(tokenResponse.idToken)
+        claims = try JWTUtils.parseJWT(tokenResponse.idToken)
     }
 }

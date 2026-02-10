@@ -10,16 +10,16 @@ public class HeadlessAdapter {
     private var cancellables = Set<AnyCancellable>()
 
     public init(nativeSDK: NativeSDK, delegate: HeadlessAdapterDelegate) {
+        precondition(
+            nativeSDK.loginController != nil,
+            "No login session started. Make sure to call `NativeSDK.login()` first."
+        )
+
         self.nativeSDK = nativeSDK
         self.delegate = delegate
+        loginController = nativeSDK.loginController!
 
-        guard let loginController = nativeSDK.loginController else {
-            assert(false, "No login in progress")
-        }
-
-        self.loginController = loginController
-
-        self.loginController.$screen
+        loginController.$screen
             .sink { [self] _ in
                 let currentScreen = self.getScreen()
                 DispatchQueue.main.async {
@@ -27,31 +27,30 @@ public class HeadlessAdapter {
                         return
                     }
 
-                    let newScreen = self.getScreen()
-                    if
-                        currentScreen.screen == newScreen.screen,
-                        currentScreen.forms == newScreen.forms,
-                        currentScreen.layout == newScreen.layout,
-                        currentScreen.messages != newScreen.messages {
-                        delegate.refreshScreen(screen: getScreen())
-                        return
+                    if let newScreen = self.getScreen() {
+                        if
+                            currentScreen?.screen == newScreen.screen,
+                            currentScreen?.forms == newScreen.forms,
+                            currentScreen?.layout == newScreen.layout,
+                            currentScreen?.messages != newScreen.messages {
+                            delegate.refreshScreen(screen: newScreen)
+                            return
+                        }
+                        delegate.renderScreen(screen: newScreen)
                     }
-
-                    delegate.renderScreen(screen: getScreen())
                 }
             }
             .store(in: &cancellables)
     }
 
     public func initialize() {
-        delegate.renderScreen(screen: getScreen())
+        let screen = getScreen()
+        precondition(screen == nil, "Expected screen to be available when HeadlessAdapter.initialize() is called.")
+        delegate.renderScreen(screen: screen!)
     }
 
-    public func getScreen() -> Screen {
-        guard let screen = loginController.screen else {
-            assert(false, "Screen not set")
-        }
-        return screen
+    public func getScreen() -> Screen? {
+        return loginController.screen
     }
 
     public func errorMessage(formId: String, widgetId: String) -> String? {

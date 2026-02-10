@@ -30,11 +30,15 @@ public struct LoginView<LayoutView: View>: View {
                                                                       _ screen: String,
                                                                       _ forms: [FormWidget],
                                                                       _ layout: Layout) -> LayoutView) {
-        guard let loginController = nativeSDK.loginController else {
-            assert(false, "No login session in progress")
-        }
+        precondition(
+            nativeSDK.loginController != nil,
+            "No login session started. Make sure to call `NativeSDK.login()` first."
+        )
+//        guard let loginController = nativeSDK.loginController else {
+//            preconditionFailure("No login session started. Make sure to call `NativeSDK.login()` first.")
+//        }
 
-        self.loginController = loginController
+        loginController = nativeSDK.loginController!
         layoutView = layout
     }
 
