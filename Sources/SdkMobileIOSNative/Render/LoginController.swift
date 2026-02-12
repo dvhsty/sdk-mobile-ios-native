@@ -136,7 +136,7 @@ public class LoginController: ObservableObject {
 
     /// Invoked by CloseWidget when entry flow completes
     public func closeEntryFlow() async throws {
-        logging.debug("Closing entry flow")
-        nativeSDK.closeEntryFlow()
+        logging.debug("Closing flow")
+        nativeSDK.closeFlow()
     }
 }

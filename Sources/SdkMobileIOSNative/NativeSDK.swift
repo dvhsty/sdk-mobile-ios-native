@@ -122,11 +122,11 @@ public class NativeSDK {
             let parameters = try await oidcHandlerService.handleCall(url: url)
 
             guard let sessionId = parameters["session_id"] else {
-                logging.info("Attempting to continue flow")
+                logging.info("Attempting to continue flow - missing session ID")
                 try await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
                 return
             }
-            logging.info("No session ID is present, creating loginController")
+            logging.info("Session ID present, creating loginController")
 
             let loginHandlerService = LoginHandlerService(
                 httpService: httpService,
@@ -228,11 +228,11 @@ public class NativeSDK {
                 oidcParams: OidcParams(
                     onSuccess: {
                         self.logging.debug("Entry flow completed successfully")
-                        self.closeEntryFlow()
+                        self.closeFlow()
                     },
                     onError: { err in
                         self.logging.debug("Entry flow completed exceptionally")
-                        self.closeEntryFlow(throwing: err)
+                        self.closeFlow(throwing: err)
 
                     },
                     prefersEphemeralWebBrowserSession: false
@@ -269,15 +269,23 @@ public class NativeSDK {
         return sessionValue
     }
 
-    func closeEntryFlow(throwing: Error? = nil) {
-        // will also run entry's defer block once continuation is resumed
-        // cleanup happens there
-        if let error = throwing {
-            entryFlowTask?.continuation.resume(throwing: error)
+    func closeFlow(throwing: Error? = nil) {
+        if let entryFlowTask = entryFlowTask {
+            // closing an entry flow
+            // will also run entry's defer block once continuation is resumed
+            // cleanup happens there
+            if let error = throwing {
+                entryFlowTask.continuation.resume(throwing: error)
+            } else {
+                entryFlowTask.continuation.resume()
+            }
+            self.entryFlowTask = nil
         } else {
-            entryFlowTask?.continuation.resume()
+            Task { @MainActor in
+                // closing another flow eg. registration
+                cleanup()
+            }
         }
-        entryFlowTask = nil
     }
 
     public func continueFlow(uri: URL) async {
