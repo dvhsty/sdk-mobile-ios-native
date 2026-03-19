@@ -15,7 +15,7 @@ public class NativeSDK {
     private let httpService: HttpService
     private let oidcHandlerService: OIDCHandlerService
 
-    private var entryFlowTask: (task: Task<Void, Error>, continuation: CheckedContinuation<Void, Error>)?
+    private var entryFlowTask: (task: Task<Void, Never>, continuation: CheckedContinuation<Void, Error>)?
 
     public init(
         issuer: URL,
@@ -177,77 +177,85 @@ public class NativeSDK {
 
         // start new flow
         let newEntryTask = Task {
-            let entryComponents = URLComponents(url: entryUrl, resolvingAgainstBaseURL: false)
-            guard let challengeItem = entryComponents?.queryItems?.first(where: { $0.name == "challenge" }) else {
-                throw NativeSDKError
-                    .genericError(message: "Expected mandatory challenge parameter but was not provided")
-            }
-
-            let requestUrlBase = issuer.appendingPathComponent("/provider/flow/entry")
-            var requestComponents = URLComponents(url: requestUrlBase, resolvingAgainstBaseURL: false)!
-            requestComponents.queryItems = [
-                URLQueryItem(name: "client_id", value: clientId),
-                URLQueryItem(name: "redirect_uri", value: redirectURI.absoluteString),
-                challengeItem,
-            ]
-
-            guard let requestUrl = requestComponents.url else {
-                throw NativeSDKError.genericError(message: "Could not generate URL for entry")
-            }
-
-            let response = try await httpService.get(url: requestUrl, acceptHeader: "*/*")
-            let statusCode = response.httpResponse.statusCode
-
-            guard case 200 ..< 400 = statusCode else {
-                if statusCode == 400 {
-                    let decodedError = try JSONDecoder().decode(EntryErrorEnvelope.self, from: response.data)
-                    throw NativeSDKError.workflowError(
-                        error: decodedError.error,
-                        errorDescription: decodedError.errorDescription
-                    )
+            do {
+                let entryComponents = URLComponents(url: entryUrl, resolvingAgainstBaseURL: false)
+                guard let challengeItem = entryComponents?.queryItems?.first(where: { $0.name == "challenge" }) else {
+                    throw NativeSDKError
+                        .genericError(message: "Expected mandatory challenge parameter but was not provided")
                 }
-                logging.warn("Failed to enter login flow")
-                logging
-                    .debug(
-                        "This might be cause by Client misconfiguration. Ensure that authentication client has entry URL configured."
-                    )
-                throw NativeSDKError.httpError(statusCode: statusCode)
-            }
 
-            let sessionId = try extractSessionId(fromResponse: response)
+                let requestUrlBase = issuer.appendingPathComponent("/provider/flow/entry")
+                var requestComponents = URLComponents(url: requestUrlBase, resolvingAgainstBaseURL: false)!
+                requestComponents.queryItems = [
+                    URLQueryItem(name: "client_id", value: clientId),
+                    URLQueryItem(name: "redirect_uri", value: redirectURI.absoluteString),
+                    challengeItem,
+                ]
 
-            // build loginController for sessionId
-            let loginHandlerService = LoginHandlerService(
-                httpService: httpService,
-                issuer: issuer,
-                sessionId: sessionId
-            )
-            let loginController = LoginController(
-                nativeSDK: self,
-                loginHandlerService: loginHandlerService,
-                oidcParams: OidcParams(
-                    onSuccess: {
-                        self.logging.debug("Entry flow completed successfully")
-                        self.closeFlow()
-                    },
-                    onError: { err in
-                        self.logging.debug("Entry flow completed exceptionally")
-                        self.closeFlow(throwing: err)
+                guard let requestUrl = requestComponents.url else {
+                    throw NativeSDKError.genericError(message: "Could not generate URL for entry")
+                }
 
-                    },
-                    prefersEphemeralWebBrowserSession: false
-                ),
-                logging: logging
-            )
-            self.loginController = loginController
+                let response = try await httpService.get(url: requestUrl, acceptHeader: "*/*")
+                let statusCode = response.httpResponse.statusCode
 
-            // submit init form with sessionId
-            try await loginController.initialize()
+                guard case 200 ..< 400 = statusCode else {
+                    if statusCode == 400 {
+                        let decodedError = try JSONDecoder().decode(EntryErrorEnvelope.self, from: response.data)
+                        throw NativeSDKError.workflowError(
+                            error: decodedError.error,
+                            errorDescription: decodedError.errorDescription
+                        )
+                    }
+                    logging.warn("Failed to enter login flow")
+                    logging
+                        .debug(
+                            "This might be cause by Client misconfiguration. Ensure that authentication client has entry URL configured."
+                        )
+                    throw NativeSDKError.httpError(statusCode: statusCode)
+                }
 
-            await MainActor.run {
-                session.loginInProgress = true
+                let sessionId = try extractSessionId(fromResponse: response)
+
+                // build loginController for sessionId
+                let loginHandlerService = LoginHandlerService(
+                    httpService: httpService,
+                    issuer: issuer,
+                    sessionId: sessionId
+                )
+                let loginController = LoginController(
+                    nativeSDK: self,
+                    loginHandlerService: loginHandlerService,
+                    oidcParams: OidcParams(
+                        onSuccess: {
+                            self.logging.debug("Entry flow completed successfully")
+                            self.closeFlow()
+                        },
+                        onError: { err in
+                            self.logging.debug("Entry flow completed exceptionally")
+                            self.closeFlow(throwing: err)
+
+                        },
+                        prefersEphemeralWebBrowserSession: false
+                    ),
+                    logging: logging
+                )
+                self.loginController = loginController
+
+                // submit init form with sessionId
+                try await loginController.initialize()
+
+                await MainActor.run {
+                    session.loginInProgress = true
+                }
+            } catch let error as NativeSDKError {
+                continuation.resume(throwing: error)
+            } catch {
+                // in case of any error, make sure to propagate it to the continuation
+                continuation.resume(throwing: NativeSDKError.unknownError(source: error))
             }
         }
+
         entryFlowTask = (task: newEntryTask, continuation: continuation)
     }
 
