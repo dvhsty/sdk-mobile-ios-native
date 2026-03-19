@@ -523,7 +523,7 @@ public class NativeSDK {
 
     private struct EntryErrorEnvelope: Decodable {
         let error: String
-        let errorDescription: String
+        let errorDescription: String?
 
         private enum CodingKeys: String, CodingKey {
             case error
