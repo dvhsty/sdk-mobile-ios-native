@@ -12,7 +12,7 @@ struct CloseView: View {
     var body: some View {
         let button = Button(widget.label!) {
             Task {
-                await try loginController.closeEntryFlow()
+                await try loginController.closeFlow()
             }
         }
 

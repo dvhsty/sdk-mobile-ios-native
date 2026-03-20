@@ -68,7 +68,7 @@ public class HeadlessAdapter {
     }
 
     public func closeEntryFlow() async throws {
-        try await loginController.closeEntryFlow()
+        try await loginController.closeFlow()
     }
 }
 
