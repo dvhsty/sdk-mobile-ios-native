@@ -67,7 +67,7 @@ public class HeadlessAdapter {
         await submit(formId: formId, data: formData)
     }
 
-    public func closeEntryFlow() async throws {
+    public func closeFlow() async throws {
         try await loginController.closeFlow()
     }
 }
