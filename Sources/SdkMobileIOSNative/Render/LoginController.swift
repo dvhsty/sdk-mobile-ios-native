@@ -9,7 +9,6 @@ public class LoginController: ObservableObject {
     var nativeSDK: NativeSDK
     var loginHandlerService: LoginHandlerService
     var oidcParams: OidcParams
-
     let authWebView = AuthWebView()
     private let logging: Logging
 
@@ -81,7 +80,7 @@ public class LoginController: ObservableObject {
         }
     }
 
-    public func bindingForWidget<T>(formId: String, widgetId: String, defaultValue: T) -> Binding<T> where T: Codable {
+    public func bindingForWidget<T: Codable>(formId: String, widgetId: String, defaultValue: T) -> Binding<T> {
         return Binding(get: { [self] in
             return formModel?.forms[formId]?[widgetId] as? T ?? defaultValue
         }, set: { [self] in
@@ -133,5 +132,11 @@ public class LoginController: ObservableObject {
         } catch {
             await triggerFallback(error)
         }
+    }
+
+    /// Invoked by CloseWidget when entry flow completes
+    public func closeFlow() async throws {
+        logging.debug("Closing flow")
+        nativeSDK.closeFlow()
     }
 }

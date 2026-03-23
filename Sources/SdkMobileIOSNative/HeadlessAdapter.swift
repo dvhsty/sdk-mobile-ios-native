@@ -66,9 +66,13 @@ public class HeadlessAdapter {
         let formData = loginController.formModel?.formRequestData(formId: formId)
         await submit(formId: formId, data: formData)
     }
+
+    public func closeEntryFlow() async throws {
+        try await loginController.closeFlow()
+    }
 }
 
-public protocol HeadlessAdapterDelegate: class {
+public protocol HeadlessAdapterDelegate: AnyObject {
     func renderScreen(screen: Screen)
     func refreshScreen(screen: Screen)
 }

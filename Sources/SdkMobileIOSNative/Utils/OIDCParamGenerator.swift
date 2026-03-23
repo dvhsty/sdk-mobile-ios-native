@@ -5,13 +5,11 @@ class OIDCParamGenerator {
     static func generateRandomString(byteLengths: Int) -> String {
         var bytes = [UInt8](repeating: 0, count: byteLengths)
         _ = SecRandomCopyBytes(kSecRandomDefault, byteLengths, &bytes)
-        let randomString = Data(bytes).base64URLEncodedString()
-        return randomString
+        return Data(bytes).base64URLEncodedString()
     }
 
     static func generateCodeVerifier() -> String {
-        let verifier = OIDCParamGenerator.generateRandomString(byteLengths: 64)
-        return verifier
+        return OIDCParamGenerator.generateRandomString(byteLengths: 64)
     }
 
     static func generateCodeChallenge(from verifier: String) -> String {
@@ -27,12 +25,10 @@ class OIDCParamGenerator {
     }
 
     static func generateState() -> String {
-        let state = OIDCParamGenerator.generateRandomString(byteLengths: 16)
-        return state
+        return OIDCParamGenerator.generateRandomString(byteLengths: 16)
     }
 
     static func generateNonce() -> String {
-        let nonce = OIDCParamGenerator.generateRandomString(byteLengths: 16)
-        return nonce
+        return OIDCParamGenerator.generateRandomString(byteLengths: 16)
     }
 }

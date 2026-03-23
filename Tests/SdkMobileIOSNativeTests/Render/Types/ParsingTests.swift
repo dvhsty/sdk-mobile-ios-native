@@ -120,7 +120,7 @@ final class ParsingTests: XCTestCase {
         }
         """
 
-        let jsonData = json.data(using: .utf8)!
+        let jsonData = try XCTUnwrap(json.data(using: .utf8))
         let screen = try JSONDecoder().decode(Screen.self, from: jsonData)
 
         let expected = Screen(
@@ -212,7 +212,7 @@ final class ParsingTests: XCTestCase {
         }
         """
 
-        let jsonData = json.data(using: .utf8)!
+        let jsonData = try XCTUnwrap(json.data(using: .utf8))
         let screen = try JSONDecoder().decode(Screen.self, from: jsonData)
 
         let expected = Screen(
@@ -243,7 +243,7 @@ final class ParsingTests: XCTestCase {
         }
         """
 
-        let jsonData = json.data(using: .utf8)!
+        let jsonData = try XCTUnwrap(json.data(using: .utf8))
         let screen = try JSONDecoder().decode(Screen.self, from: jsonData)
 
         let expected = Screen(
@@ -277,7 +277,7 @@ final class ParsingTests: XCTestCase {
         }
         """
 
-        let jsonData = json.data(using: .utf8)!
+        let jsonData = try XCTUnwrap(json.data(using: .utf8))
 
         XCTAssertThrowsError(try JSONDecoder().decode(Screen.self, from: jsonData)) { err in
             XCTAssertEqual(err as! ParsingError, ParsingError.widget(type: "wrongWidget"))
@@ -294,7 +294,7 @@ final class ParsingTests: XCTestCase {
         }
         """
 
-        let jsonData = json.data(using: .utf8)!
+        let jsonData = try XCTUnwrap(json.data(using: .utf8))
 
         XCTAssertThrowsError(try JSONDecoder().decode(Screen.self, from: jsonData)) { err in
             XCTAssertEqual(err as! ParsingError, ParsingError.layout(type: "wrongLayout"))

@@ -1,6 +1,7 @@
 # Disable all rules by default
 disabled_rules: 
   - trailing_comma
+  - type_body_length
 
 # Enable specific rules
 opt_in_rules: 

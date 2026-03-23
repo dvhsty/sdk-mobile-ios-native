@@ -6,7 +6,7 @@ final class NativeSDKTests: XCTestCase {
 
     override func tearDownWithError() throws {}
 
-    func testExample() throws {
+    func testExample() {
         XCTAssert(true)
     }
 }

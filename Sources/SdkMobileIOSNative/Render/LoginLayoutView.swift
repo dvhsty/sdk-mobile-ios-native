@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-public struct LoginLayoutView<WidgetView>: View where WidgetView: View {
+public struct LoginLayoutView<WidgetView: View>: View {
     let screen: String
     let forms: [FormWidget]
 
@@ -47,7 +47,6 @@ public struct LoginLayoutView<WidgetView>: View where WidgetView: View {
         }
     }
 
-    @ViewBuilder
     func horizontalLayout(_ layout: SingleLayout) -> some View {
         HStack {
             ForEach(Array(layout.items.enumerated()), id: \.offset) { _, element in
@@ -56,7 +55,6 @@ public struct LoginLayoutView<WidgetView>: View where WidgetView: View {
         }
     }
 
-    @ViewBuilder
     func verticalLayout(_ layout: SingleLayout) -> some View {
         VStack {
             ForEach(Array(layout.items.enumerated()), id: \.offset) { _, element in

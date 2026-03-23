@@ -1,6 +1,6 @@
 import SwiftUI
 
-public struct LoginView<LayoutView>: View where LayoutView: View {
+public struct LoginView<LayoutView: View>: View {
     @ObservedObject var loginController: LoginController
 
     @ViewBuilder var layoutView: (_ loginController: LoginController,

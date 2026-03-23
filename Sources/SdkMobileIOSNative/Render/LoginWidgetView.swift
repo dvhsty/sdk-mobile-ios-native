@@ -43,6 +43,8 @@ public struct LoginWidgetView: View {
                 PhoneView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
             case let .date(widget):
                 DateView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
+            case let .close(widget):
+                CloseView(widget: widget)
             default:
                 FallbackTriggerView()
             }
