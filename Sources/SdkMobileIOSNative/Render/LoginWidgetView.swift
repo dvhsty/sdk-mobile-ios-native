@@ -49,6 +49,10 @@ public struct LoginWidgetView: View {
                 PasskeyEnrollView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
             case let .passkeyLogin(widget):
                 PasskeyLoginView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
+            case let .webauthnEnroll(widget):
+                WebauthnEnrollView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
+            case let .webauthnLogin(widget):
+                WebauthnLoginView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
             default:
                 FallbackTriggerView()
             }
