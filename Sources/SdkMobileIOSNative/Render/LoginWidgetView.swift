@@ -45,6 +45,10 @@ public struct LoginWidgetView: View {
                 DateView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
             case let .close(widget):
                 CloseView(widget: widget)
+            case let .passkeyEnroll(widget):
+                PasskeyEnrollView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
+            case let .passkeyLogin(widget):
+                PasskeyLoginView(screen: screen, formId: formId, widgetId: widgetId, widget: widget)
             default:
                 FallbackTriggerView()
             }
