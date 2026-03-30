@@ -1,19 +1,19 @@
-import Foundation
 import AuthenticationServices
+import Foundation
 
-class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
-
+public class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate,
+    ASAuthorizationControllerPresentationContextProviding {
     var onFinish: (([String: Any]) async -> Void)?
     var onError: ((Error?) async -> Void)?
 
-    public override init() {
-        self.onFinish = nil
-    }
+    var controller: ASAuthorizationController?
+
+    override public init() {}
 
     func enroll(
         enrollOptions: WebauthnEnrollWidget.EnrollOptions,
         onFinish: @escaping (([String: Any]) async -> Void),
-        onError: @escaping ((Error?) async -> Void),
+        onError: @escaping ((Error?) async -> Void)
     ) {
         guard let userId = enrollOptions.user.id.base64URLDecode() else {
             Task {
@@ -27,43 +27,101 @@ class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate, ASAuthorizat
             }
             return
         }
-        let displayName = enrollOptions.user.displayName
 
-        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(
-            relyingPartyIdentifier: enrollOptions.rp.id
-        )
+        let request: ASAuthorizationRequest?
 
-        let request = provider.createCredentialRegistrationRequest(
-            challenge: challenge,
-            name: displayName,
-            userID: userId
-        )
+        switch enrollOptions.authenticatorSelection.authenticatorAttachment {
+        case "platform", nil:
+            let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(
+                relyingPartyIdentifier: enrollOptions.rp.id
+            )
 
-        request.attestationPreference = ASAuthorizationPublicKeyCredentialAttestationKind(enrollOptions.attestation)
-        request.userVerificationPreference = ASAuthorizationPublicKeyCredentialUserVerificationPreference(rawValue: enrollOptions.authenticatorSelection.userVerification) ?? .preferred
+            request = provider.createCredentialRegistrationRequest(
+                challenge: challenge,
+                name: enrollOptions.user.name,
+                userID: userId
+            )
+        case "cross-platform":
+            let provider = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(
+                relyingPartyIdentifier: enrollOptions.rp.id
+            )
 
-        if #available(iOS 17.4, *) {
-            request.excludedCredentials = enrollOptions.excludeCredentials.compactMap({ excludeCredential in
-                if let id = excludeCredential.id.base64URLDecode() {
-                    return ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: id)
+            request = provider.createCredentialRegistrationRequest(
+                challenge: challenge,
+                displayName: enrollOptions.user.displayName,
+                name: enrollOptions.user.name,
+                userID: userId
+            )
+        default:
+            request = nil
+        }
+
+        guard let request = request else {
+            Task {
+                await onError(nil)
+            }
+            return
+        }
+
+        if let typedRequest = request as? ASAuthorizationPublicKeyCredentialRegistrationRequest {
+            typedRequest
+                .attestationPreference = ASAuthorizationPublicKeyCredentialAttestationKind(enrollOptions.attestation)
+            typedRequest
+                .userVerificationPreference =
+                ASAuthorizationPublicKeyCredentialUserVerificationPreference(rawValue: enrollOptions
+                    .authenticatorSelection.userVerification) ?? .preferred
+        }
+
+        // Platform
+        if let typedRequest = request as? ASAuthorizationPlatformPublicKeyCredentialRegistrationRequest {
+            if #available(iOS 17.4, *) {
+                typedRequest.excludedCredentials = enrollOptions.excludeCredentials.compactMap { excludeCredential in
+                    if let id = excludeCredential.id.base64URLDecode() {
+                        return ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: id)
+                    }
+                    return nil
                 }
-                return nil
-            })
+            }
+        }
+
+        // Security key
+        if let typedRequest = request as? ASAuthorizationSecurityKeyPublicKeyCredentialRegistrationRequest {
+            typedRequest.credentialParameters = enrollOptions.pubKeyCredParams.map { param in
+                ASAuthorizationPublicKeyCredentialParameters(algorithm: ASCOSEAlgorithmIdentifier(param.alg))
+            }
+
+            typedRequest
+                .residentKeyPreference = ASAuthorizationPublicKeyCredentialResidentKeyPreference(rawValue: enrollOptions
+                    .authenticatorSelection.residentKey)
+
+            if #available(iOS 17.4, *) {
+                typedRequest.excludedCredentials = enrollOptions.excludeCredentials.compactMap { excludeCredential in
+                    if let id = excludeCredential.id.base64URLDecode() {
+                        return ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor(
+                            credentialID: id,
+                            transports: excludeCredential.transports.map {
+                                ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport(rawValue: $0)
+                            }
+                        )
+                    }
+                    return nil
+                }
+            }
         }
 
         self.onFinish = onFinish
         self.onError = onError
 
-        let controller = ASAuthorizationController(authorizationRequests: [request])
-        controller.delegate = self
-        controller.presentationContextProvider = self
-        controller.performRequests()
+        controller = ASAuthorizationController(authorizationRequests: [request])
+        controller?.delegate = self
+        controller?.presentationContextProvider = self
+        controller?.performRequests()
     }
 
     func authenticate(
         assertionOptions: WebauthnLoginWidget.AssertionOptions,
         onFinish: @escaping (([String: Any]) async -> Void),
-        onError: @escaping ((Error?) async -> Void),
+        onError: @escaping ((Error?) async -> Void)
     ) {
         guard let challenge = assertionOptions.challenge.base64URLDecode() else {
             Task {
@@ -72,45 +130,70 @@ class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate, ASAuthorizat
             return
         }
 
-        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(
+        let userVerificationPreference =
+            ASAuthorizationPublicKeyCredentialUserVerificationPreference(rawValue: assertionOptions.userVerification) ??
+            .preferred
+
+        let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(
             relyingPartyIdentifier: assertionOptions.rpId
         )
 
-        let request = provider.createCredentialAssertionRequest(challenge: challenge)
-
-        request.userVerificationPreference = ASAuthorizationPublicKeyCredentialUserVerificationPreference(rawValue: assertionOptions.userVerification) ?? .preferred
-        request.allowedCredentials = assertionOptions.allowCredentials.compactMap({ allowCredential in
-            if let id = allowCredential.id.base64URLDecode() { // TODO URL??
+        let platformRequest = platformProvider.createCredentialAssertionRequest(challenge: challenge)
+        platformRequest.userVerificationPreference = userVerificationPreference
+        platformRequest.allowedCredentials = assertionOptions.allowCredentials.compactMap { allowCredential in
+            if let id = allowCredential.id.base64URLDecode() {
                 return ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: id)
             }
             return nil
-        })
+        }
+
+        let securityKeyProvider = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(
+            relyingPartyIdentifier: assertionOptions.rpId
+        )
+
+        let securityKeyRequest = securityKeyProvider.createCredentialAssertionRequest(challenge: challenge)
+        securityKeyRequest.userVerificationPreference = userVerificationPreference
+        securityKeyRequest.allowedCredentials = assertionOptions.allowCredentials.compactMap { excludeCredential in
+            if let id = excludeCredential.id.base64URLDecode() {
+                return ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor(
+                    credentialID: id,
+                    transports: excludeCredential.transports.map {
+                        ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport(rawValue: $0)
+                    }
+                )
+            }
+            return nil
+        }
 
         self.onFinish = onFinish
         self.onError = onError
 
-        let controller = ASAuthorizationController(authorizationRequests: [request])
-        controller.delegate = self
-        controller.presentationContextProvider = self
-        controller.performRequests()
+        controller = ASAuthorizationController(authorizationRequests: [platformRequest, securityKeyRequest])
+        controller?.delegate = self
+        controller?.presentationContextProvider = self
+        controller?.performRequests()
     }
 
-    public func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
-        if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration {
+    public func authorizationController(
+        controller _: ASAuthorizationController,
+        didCompleteWithAuthorization authorization: ASAuthorization
+    ) {
+        if let credential = authorization.credential as? ASAuthorizationPublicKeyCredentialRegistration {
             let response: [String: Any] = [
                 "id": credential.credentialID.base64URLEncodedString(),
                 "rawId": credential.credentialID.base64URLEncodedString(),
                 "type": "public-key",
                 "response": [
                     "clientDataJSON": credential.rawClientDataJSON.base64URLEncodedString(),
-                    "attestationObject": credential.rawAttestationObject.map { $0.base64URLEncodedString() } ?? ""
-                ]
+                    "attestationObject": credential.rawAttestationObject.map { $0.base64URLEncodedString() } ?? "",
+                ],
             ]
 
             Task {
                 await onFinish?(response)
             }
-        } else if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion {
+        } else if let credential = authorization.credential as? ASAuthorizationPublicKeyCredentialAssertion {
+            // Note: userID can be nil for security keys
             let response: [String: Any] = [
                 "id": credential.credentialID.base64URLEncodedString(),
                 "rawId": credential.credentialID.base64URLEncodedString(),
@@ -119,8 +202,8 @@ class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate, ASAuthorizat
                     "clientDataJSON": credential.rawClientDataJSON.base64URLEncodedString(),
                     "authenticatorData": credential.rawAuthenticatorData.base64URLEncodedString(),
                     "signature": credential.signature.base64URLEncodedString(),
-                    "userHandle": credential.userID.base64URLEncodedString()
-                ]
+                    "userHandle": credential.userID?.base64URLEncodedString(),
+                ],
             ]
 
             Task {
@@ -133,21 +216,20 @@ class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate, ASAuthorizat
         }
     }
 
-    public func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+    public func authorizationController(controller _: ASAuthorizationController, didCompleteWithError error: Error) {
         Task {
             await onError?(error)
         }
-      }
+    }
 
-    public func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-      return UIApplication.shared.windows.first { $0.isKeyWindow } ?? ASPresentationAnchor()
+    public func presentationAnchor(for _: ASAuthorizationController) -> ASPresentationAnchor {
+        return UIApplication.shared.windows.first { $0.isKeyWindow } ?? ASPresentationAnchor()
     }
 }
 
 private extension String {
     func base64URLDecode() -> Data? {
-        var base64 = self
-            .replacingOccurrences(of: "-", with: "+")
+        var base64 = replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
 
         let remainder = base64.count % 4
