@@ -10,7 +10,13 @@ public class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate,
 
     override public init() {}
 
-    func enroll(
+    @available(iOS 16.0, *)
+    public func close() {
+        controller?.delegate = nil
+        controller?.cancel()
+    }
+
+    public func enroll(
         enrollOptions: WebauthnEnrollWidget.EnrollOptions,
         onFinish: @escaping (([String: Any]) async -> Void),
         onError: @escaping ((Error?) async -> Void)
@@ -118,11 +124,15 @@ public class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate,
         controller?.performRequests()
     }
 
-    func authenticate(
+    public func authenticate(
         assertionOptions: WebauthnLoginWidget.AssertionOptions,
         onFinish: @escaping (([String: Any]) async -> Void),
         onError: @escaping ((Error?) async -> Void)
     ) {
+        if #available(iOS 16.0, *) {
+            close()
+        }
+
         guard let challenge = assertionOptions.challenge.base64URLDecode() else {
             Task {
                 await onError(nil)
@@ -130,54 +140,51 @@ public class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate,
             return
         }
 
-        let userVerificationPreference =
-            ASAuthorizationPublicKeyCredentialUserVerificationPreference(rawValue: assertionOptions.userVerification) ??
-            .preferred
+        self.onFinish = onFinish
+        self.onError = onError
 
-        let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(
-            relyingPartyIdentifier: assertionOptions.rpId
+        controller = createControllerForAuthenticate(
+            assertionOptions: assertionOptions,
+            challenge: challenge,
+            platform: true,
+            securityKey: true
         )
+        controller?.performRequests()
+    }
 
-        let platformRequest = platformProvider.createCredentialAssertionRequest(challenge: challenge)
-        platformRequest.userVerificationPreference = userVerificationPreference
-        platformRequest.allowedCredentials = assertionOptions.allowCredentials.compactMap { allowCredential in
-            if let id = allowCredential.id.base64URLDecode() {
-                return ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: id)
+    @available(iOS 16.0, *)
+    public func autofill(
+        assertionOptions: WebauthnLoginWidget.AssertionOptions,
+        onFinish: @escaping (([String: Any]) async -> Void),
+        onError: @escaping ((Error?) async -> Void)
+    ) {
+        close()
+
+        guard let challenge = assertionOptions.challenge.base64URLDecode() else {
+            Task {
+                await onError(nil)
             }
-            return nil
-        }
-
-        let securityKeyProvider = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(
-            relyingPartyIdentifier: assertionOptions.rpId
-        )
-
-        let securityKeyRequest = securityKeyProvider.createCredentialAssertionRequest(challenge: challenge)
-        securityKeyRequest.userVerificationPreference = userVerificationPreference
-        securityKeyRequest.allowedCredentials = assertionOptions.allowCredentials.compactMap { excludeCredential in
-            if let id = excludeCredential.id.base64URLDecode() {
-                return ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor(
-                    credentialID: id,
-                    transports: excludeCredential.transports.map {
-                        ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport(rawValue: $0)
-                    }
-                )
-            }
-            return nil
+            return
         }
 
         self.onFinish = onFinish
         self.onError = onError
 
-        controller = ASAuthorizationController(authorizationRequests: [platformRequest, securityKeyRequest])
-        controller?.delegate = self
-        controller?.presentationContextProvider = self
-        controller?.performRequests()
+        controller = createControllerForAuthenticate(
+            assertionOptions: assertionOptions,
+            challenge: challenge,
+            platform: true,
+            securityKey: false
+        )
+        controller?.performAutoFillAssistedRequests()
     }
 
     public func authorizationController(
         controller _: ASAuthorizationController,
         didCompleteWithAuthorization authorization: ASAuthorization
     ) {
+        controller = nil
+
         if let credential = authorization.credential as? ASAuthorizationPublicKeyCredentialRegistration {
             let response: [String: Any] = [
                 "id": credential.credentialID.base64URLEncodedString(),
@@ -217,6 +224,8 @@ public class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate,
     }
 
     public func authorizationController(controller _: ASAuthorizationController, didCompleteWithError error: Error) {
+        controller = nil
+
         Task {
             await onError?(error)
         }
@@ -224,6 +233,66 @@ public class WebauthnHandler: NSObject, ASAuthorizationControllerDelegate,
 
     public func presentationAnchor(for _: ASAuthorizationController) -> ASPresentationAnchor {
         return UIApplication.shared.windows.first { $0.isKeyWindow } ?? ASPresentationAnchor()
+    }
+
+    private func createControllerForAuthenticate(
+        assertionOptions: WebauthnLoginWidget.AssertionOptions,
+        challenge: Data,
+        platform: Bool,
+        securityKey: Bool
+    ) -> ASAuthorizationController {
+        let userVerificationPreference =
+            ASAuthorizationPublicKeyCredentialUserVerificationPreference(rawValue: assertionOptions.userVerification) ??
+            .preferred
+
+        var requests: [ASAuthorizationRequest] = []
+
+        if platform {
+            let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(
+                relyingPartyIdentifier: assertionOptions.rpId
+            )
+
+            let platformRequest = platformProvider.createCredentialAssertionRequest(challenge: challenge)
+            platformRequest.userVerificationPreference = userVerificationPreference
+            platformRequest.allowedCredentials = assertionOptions.allowCredentials.compactMap { allowCredential in
+                if let id = allowCredential.id.base64URLDecode() {
+                    return ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: id)
+                }
+                return nil
+            }
+
+            requests.append(platformRequest)
+        }
+
+        if securityKey {
+            let securityKeyProvider = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(
+                relyingPartyIdentifier: assertionOptions.rpId
+            )
+
+            let securityKeyRequest = securityKeyProvider.createCredentialAssertionRequest(challenge: challenge)
+            securityKeyRequest.userVerificationPreference = userVerificationPreference
+            securityKeyRequest.allowedCredentials = assertionOptions.allowCredentials.compactMap { excludeCredential in
+                if let id = excludeCredential.id.base64URLDecode() {
+                    return ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor(
+                        credentialID: id,
+                        transports: excludeCredential.transports.map {
+                            ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport(rawValue: $0)
+                        }
+                    )
+                }
+                return nil
+            }
+
+            requests.append(securityKeyRequest)
+        }
+
+        assert(requests.isEmpty == false, "No assertion options were provided")
+
+        let controller = ASAuthorizationController(authorizationRequests: requests)
+        controller.delegate = self
+        controller.presentationContextProvider = self
+
+        return controller
     }
 }
 

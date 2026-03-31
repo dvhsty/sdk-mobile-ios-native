@@ -6,6 +6,8 @@ struct PasskeyLoginView: View {
     @State var handler = WebauthnHandler()
     @State var errorMessage: String?
 
+    @State var autofillHandler = WebauthnHandler()
+
     // periphery:ignore
     let screen: String
     let formId: String
@@ -25,11 +27,16 @@ struct PasskeyLoginView: View {
         VStack {
             let button = Button {
                 Task {
+                    if #available(iOS 16.0, *) {
+                        autofillHandler.close()
+                    }
+
                     handler.authenticate(assertionOptions: widget.assertionOptions) { result in
                         loginController.setWidgetData(formId: formId, widgetId: widgetId, value: result)
                         await loginController.submit(formId: formId)
                     } onError: { err in
                         errorMessage = err?.localizedDescription
+                        autofill()
                     }
                 }
             } label: { Text(widget.label) }
@@ -49,6 +56,24 @@ struct PasskeyLoginView: View {
             if let errorMessage = errorMessage {
                 Text(errorMessage)
                     .foregroundColor(.red)
+            }
+        }
+        .onAppear {
+            autofill()
+        }
+        .onDisappear {
+            if #available(iOS 16.0, *) {
+                autofillHandler.close()
+            }
+        }
+    }
+
+    func autofill() {
+        if #available(iOS 16.0, *) {
+            autofillHandler.autofill(assertionOptions: widget.assertionOptions) { result in
+                loginController.setWidgetData(formId: formId, widgetId: widgetId, value: result)
+                await loginController.submit(formId: formId)
+            } onError: { _ in
             }
         }
     }
