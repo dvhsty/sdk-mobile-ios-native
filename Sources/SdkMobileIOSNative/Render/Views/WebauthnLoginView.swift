@@ -5,6 +5,7 @@ struct WebauthnLoginView: View {
 
     @State var handler = WebauthnHandler()
     @State var errorMessage: String?
+    @State var running = false
 
     // periphery:ignore
     let screen: String
@@ -24,13 +25,14 @@ struct WebauthnLoginView: View {
     var body: some View {
         VStack {
             let button = Button {
-                Task {
-                    handler.authenticate(assertionOptions: widget.assertionOptions) { result in
-                        loginController.setWidgetData(formId: formId, widgetId: widgetId, value: result)
-                        await loginController.submit(formId: formId)
-                    } onError: { err in
-                        errorMessage = err?.localizedDescription
-                    }
+                running = true
+                handler.authenticate(assertionOptions: widget.assertionOptions) { result in
+                    loginController.setWidgetData(formId: formId, widgetId: widgetId, value: result)
+                    await loginController.submit(formId: formId)
+                    running = false
+                } onError: { err in
+                    errorMessage = err?.localizedDescription
+                    running = false
                 }
             } label: { Text(widget.label) }
 
@@ -51,5 +53,6 @@ struct WebauthnLoginView: View {
                     .foregroundColor(.red)
             }
         }
+        .disabled(running)
     }
 }

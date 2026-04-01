@@ -5,6 +5,7 @@ struct PasskeyLoginView: View {
 
     @State var handler = WebauthnHandler()
     @State var errorMessage: String?
+    @State var running = false
 
     @State var autofillHandler = WebauthnHandler()
 
@@ -26,18 +27,19 @@ struct PasskeyLoginView: View {
     var body: some View {
         VStack {
             let button = Button {
-                Task {
-                    if #available(iOS 16.0, *) {
-                        autofillHandler.close()
-                    }
+                running = true
+                if #available(iOS 16.0, *) {
+                    autofillHandler.close()
+                }
 
-                    handler.authenticate(assertionOptions: widget.assertionOptions) { result in
-                        loginController.setWidgetData(formId: formId, widgetId: widgetId, value: result)
-                        await loginController.submit(formId: formId)
-                    } onError: { err in
-                        errorMessage = err?.localizedDescription
-                        autofill()
-                    }
+                handler.authenticate(assertionOptions: widget.assertionOptions) { result in
+                    loginController.setWidgetData(formId: formId, widgetId: widgetId, value: result)
+                    await loginController.submit(formId: formId)
+                    running = false
+                } onError: { err in
+                    errorMessage = err?.localizedDescription
+                    autofill()
+                    running = false
                 }
             } label: { Text(widget.label) }
 
@@ -58,6 +60,7 @@ struct PasskeyLoginView: View {
                     .foregroundColor(.red)
             }
         }
+        .disabled(running)
         .onAppear {
             autofill()
         }
