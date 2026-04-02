@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FormModel {
-    var forms: [String: [String: Codable]] = [:]
+    var forms: [String: [String: Any]] = [:]
     var readonlyFormWidgets: [String: [String]] = [:]
 
     init(formWidgets: [FormWidget]) {
@@ -44,14 +44,14 @@ struct FormModel {
         return requestData
     }
 
-    mutating func setWidgetValue(formId: String, widgetId: String, value: Codable) {
+    mutating func setWidgetValue(formId: String, widgetId: String, value: Any) {
         if forms[formId] == nil {
             forms[formId] = [:]
         }
         forms[formId]![widgetId] = value
     }
 
-    private func buildRequestData(value: Codable, dict: [String: Any], keyPath: [String]) -> [String: Any] {
+    private func buildRequestData(value: Any, dict: [String: Any], keyPath: [String]) -> [String: Any] {
         guard let key = keyPath.last else {
             return dict
         }

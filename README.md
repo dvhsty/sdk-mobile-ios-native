@@ -401,6 +401,16 @@ Button("Logout") {
 }
 ```
 
+## Enable Webauthn/Passkey support
+
+* On the Strivacity admin console register the application under the SDK configuration tab iOS Configuration section
+  * Use the Team id and Bundle identifier of the application
+* On the application side add an "Associated Domains" capability with for webcredentials, e.g.: "webcredentials:<your-cluster-domain>"
+  * See: https://developer.apple.com/documentation/xcode/configuring-an-associated-domain
+  * During development it might be helpful to add the developer mode option: e.g.: "webcredentials:<your-cluster-domain>?mode=developer"
+  * Setup iPhone for development
+    * Go to Settings > Developer on your iPhone and enable Associated Domains Development to allow these domains to work.
+
 ## Author
 
 Strivacity: [opensource@strivacity.com](mailto:opensource@strivacity.com)
