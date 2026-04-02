@@ -367,8 +367,16 @@ public class NativeSDK {
             assert(false, "Unable to generate /logout url")
         }
 
-        try await oidcHandlerService.handleCall(url: url)
+        let redirectUrl = try await oidcHandlerService.logout(url: url)
+
         logging.info("Logout completed successfully")
+
+        guard let redirectUrl = redirectUrl,
+              redirectUrl.starts(with: postLogoutURI.absoluteString.lowercased()) else {
+            logging.warn("Logout redirect does not match expected logout URL. " +
+                "This is likely a misconfiguration of `postLogoutURI`")
+            return
+        }
     }
 
     public func revoke() async throws {

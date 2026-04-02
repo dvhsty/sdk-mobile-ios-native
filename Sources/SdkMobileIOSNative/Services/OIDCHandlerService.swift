@@ -15,23 +15,28 @@ class OIDCHandlerService {
         if url.scheme == "https" {
             let response = try await httpService.get(url: url, acceptHeader: "text/html")
             let responseStatusCode: Int = response.httpResponse.statusCode
-            guard
-                (responseStatusCode == 200 && response.httpResponse.url?.host == url.host && response
-                    .httpResponse.url?.path == "/oauth2/error")
-                || response.httpResponse.statusCode == 302
-                || response.httpResponse.statusCode == 303 else {
+
+            guard [200, 302, 303].contains(responseStatusCode) else {
                 logging.debug("Unexpected response with status code: [\(responseStatusCode)]")
                 throw NativeSDKError.httpError(statusCode: response.httpResponse.statusCode)
             }
 
-            let locationHeader = response.httpResponse.value(forHTTPHeaderField: "Location")
-            let url = response.httpResponse.url?.absoluteString
-
-            guard let responseLocation = locationHeader ?? url else {
-                assert(false, "No location found")
+            if responseStatusCode == 200,
+               let responseUrl = response.httpResponse.url,
+               responseUrl.host == url.host, responseUrl.path == "/oauth2/error" {
+                return getQueryParameters(from: responseUrl)
             }
 
-            location = responseLocation
+            guard let responseBody = String(data: response.data, encoding: .utf8),
+                  !responseBody.isEmpty else {
+                logging.warn("Expected response body to contain redirect URL but was not found or could not be decoded")
+                throw NativeSDKError.invalidCallback(
+                    reason: "Invalid response received"
+                )
+            }
+
+            location = responseBody
+
         } else {
             location = url.absoluteString
         }
@@ -40,6 +45,17 @@ class OIDCHandlerService {
             assert(false, "Invalid location retrieved")
         }
         return getQueryParameters(from: locationUrl)
+    }
+
+    func logout(url: URL) async throws -> String? {
+        let response = try await httpService.get(url: url, acceptHeader: "text/html")
+        let responseStatusCode: Int = response.httpResponse.statusCode
+
+        return switch responseStatusCode {
+        case 200: response.httpResponse.url?.absoluteString
+        case 302: response.httpResponse.value(forHTTPHeaderField: "Location")
+        default: throw NativeSDKError.httpError(statusCode: response.httpResponse.statusCode)
+        }
     }
 
     func tokenExchange(url: URL, params: TokenExchangeParams) async throws -> TokenResponse {
