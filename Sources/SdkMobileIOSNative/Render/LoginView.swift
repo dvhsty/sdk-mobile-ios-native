@@ -34,9 +34,6 @@ public struct LoginView<LayoutView: View>: View {
             nativeSDK.loginController != nil,
             "No login session started. Make sure to call `NativeSDK.login()` first."
         )
-//        guard let loginController = nativeSDK.loginController else {
-//            preconditionFailure("No login session started. Make sure to call `NativeSDK.login()` first.")
-//        }
 
         loginController = nativeSDK.loginController!
         layoutView = layout

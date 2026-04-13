@@ -49,7 +49,7 @@ public class NativeSDK {
     ) async throws -> Profile {
         return try await withCheckedThrowingContinuation { continuation in
             Task {
-                try await login(
+                await login(
                     parameters: parameters,
                     onSuccess: {
                         continuation.resume(returning: self.session.profile!)
