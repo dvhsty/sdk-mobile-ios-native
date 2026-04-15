@@ -39,9 +39,9 @@ public class NativeSDK {
         session = Session(storage: storage, logging: logging)
     }
 
-    public func initializeSession() async throws {
+    public func initializeSession() async {
         await session.load()
-        try await refreshTokensIfNeeded()
+        await refreshTokensIfNeeded()
     }
 
     public func login(
@@ -123,7 +123,7 @@ public class NativeSDK {
 
             guard let sessionId = parameters["session_id"] else {
                 logging.info("Attempting to continue flow - missing session ID")
-                try await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
+                try await exchangeCodeForToken(oidcParams: oidcParams, queryParameters: parameters)
                 return
             }
             logging.info("Session ID present, creating loginController")
@@ -148,6 +148,7 @@ public class NativeSDK {
             }
         } catch {
             logging.error("Failed to log in", error: error)
+            cleanup()
             onError(NativeSDKError.unknownError(source: error))
         }
     }
@@ -296,22 +297,6 @@ public class NativeSDK {
         }
     }
 
-    public func continueFlow(uri: URL) async throws {
-        guard let oidcParams = loginController?.oidcParams else {
-            throw NativeSDKError.technical(message: "Called continueFlow in invalid state")
-        }
-
-        do {
-            let parameters = try await oidcHandlerService.handleCall(url: uri)
-            try await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
-        } catch {
-            await MainActor.run {
-                cleanup()
-                oidcParams.onError(NativeSDKError.unknownError(source: error))
-            }
-        }
-    }
-
     public func cancelFlow(error: NativeSDKError? = nil) {
         // reset logging correlation state
         logging.xEventId = nil
@@ -326,15 +311,14 @@ public class NativeSDK {
             entryFlowTask.continuation.resume(throwing: CancellationError())
         }
 
-        guard let loginController = loginController else {
-            return
-        }
-
+        // TODO: retest cancellation flows
         Task { @MainActor in
-            cleanup()
-            if let error = error {
-                loginController.oidcParams.onError(error)
+            // check if locingController is still
+            if let error = error,
+               let oidcParams = self.loginController?.oidcParams {
+                oidcParams.onError(error)
             }
+            cleanup()
         }
     }
 
@@ -396,28 +380,41 @@ public class NativeSDK {
         await session.clear()
     }
 
-    public func isAuthenticated() async throws -> Bool {
-        try await refreshTokensIfNeeded()
+    public func isAuthenticated() async -> Bool {
+        await refreshTokensIfNeeded()
         return session.profile != nil
     }
 
-    public func getAccessToken() async throws -> String? {
-        try await refreshTokensIfNeeded()
+    public func getAccessToken() async -> String? {
+        await refreshTokensIfNeeded()
         return session.profile?.tokenResponse.accessToken
     }
 
-    private func continueFlow(oidcParams: OidcParams, queryParameters: [String: String]) async throws {
-        if let loginController = loginController, let sessionId = queryParameters["session_id"] {
-            do {
-                logging.info("Attempting to initialize loginController")
-                try await loginController.initialize()
-            } catch {
-                await MainActor.run {
-                    cleanup()
+    func finalizeFlow(uri: URL) async throws {
+        guard let oidcParams = loginController?.oidcParams else {
+            throw NativeSDKError.technical(message: "Called continueFlow in invalid state")
+        }
+
+        do {
+            let parameters = try await oidcHandlerService.handleCall(url: uri)
+            try await exchangeCodeForToken(oidcParams: oidcParams, queryParameters: parameters)
+        } catch {
+            await MainActor.run {
+                cleanup()
+                switch error {
+                case is NativeSDKError:
+                    oidcParams.onError(error)
+                default:
                     oidcParams.onError(NativeSDKError.unknownError(source: error))
                 }
             }
+        }
+    }
 
+    private func exchangeCodeForToken(oidcParams: OidcParams, queryParameters: [String: String]) async throws {
+        if let loginController = loginController, let sessionId = queryParameters["session_id"] {
+            logging.info("Attempting to initialize loginController")
+            try await loginController.initialize()
             return
         } else {
             logging.info("loginController is null or sessionId does not exist")
@@ -425,16 +422,11 @@ public class NativeSDK {
 
         if let error = queryParameters["error"], let errorDescription = queryParameters["error_description"] {
             await session.clear()
-
-            await MainActor.run {
-                cleanup()
-                oidcParams.onError(NativeSDKError.oidcError(
-                    error: error,
-                    errorDescription: errorDescription.replacingOccurrences(of: "+", with: " ")
-                        .removingPercentEncoding ?? errorDescription
-                ))
-            }
-            return
+            throw NativeSDKError.oidcError(
+                error: error,
+                errorDescription: errorDescription.replacingOccurrences(of: "+", with: " ")
+                    .removingPercentEncoding ?? errorDescription
+            )
         }
 
         guard let state = queryParameters["state"] else {
@@ -442,60 +434,48 @@ public class NativeSDK {
         }
 
         if state != oidcParams.state {
-            await MainActor.run {
-                cleanup()
-                oidcParams.onError(NativeSDKError.invalidCallback(reason: "State param did not matched expected value"))
-            }
-            return
+            throw NativeSDKError.invalidCallback(reason: "State param did not matched expected value")
         }
 
         guard let code = queryParameters["code"] else {
             throw NativeSDKError.technical(message: "Parameter `code` missing from response")
         }
 
-        do {
-            let tokenResponse = try await oidcHandlerService.tokenExchange(
-                url: issuer.appendingPathComponent("/oauth2/token"),
-                params: TokenExchangeParams(
-                    code: code,
-                    codeVerifier: oidcParams.codeVerifier,
-                    redirectURI: redirectURI.absoluteString,
-                    clientId: clientId
-                )
+        let tokenResponse = try await oidcHandlerService.tokenExchange(
+            url: issuer.appendingPathComponent("/oauth2/token"),
+            params: TokenExchangeParams(
+                code: code,
+                codeVerifier: oidcParams.codeVerifier,
+                redirectURI: redirectURI.absoluteString,
+                clientId: clientId
             )
+        )
 
-            guard let nonce = try JWTUtils.parseJWT(tokenResponse.idToken)["nonce"] as? String else {
-                throw NativeSDKError.technical(message: "Nonce missing from response")
-            }
+        guard let nonce = try JWTUtils.parseJWT(tokenResponse.idToken)["nonce"] as? String else {
+            throw NativeSDKError.technical(message: "Nonce missing from response")
+        }
 
-            if nonce != oidcParams.nonce {
-                logging.debug("Nonce param did not match expected value")
-                await MainActor.run {
-                    cleanup()
-                    oidcParams
-                        .onError(NativeSDKError.invalidCallback(reason: "Nonce param did not matched expected value"))
-                }
-                return
-            }
-
-            try await session.update(tokenResponse: tokenResponse)
-
-            logging.xEventId = nil
-            logging.info("Login successful")
+        if nonce != oidcParams.nonce {
+            logging.debug("Nonce param did not match expected value")
             await MainActor.run {
                 cleanup()
-                oidcParams.onSuccess()
+                oidcParams
+                    .onError(NativeSDKError.invalidCallback(reason: "Nonce param did not matched expected value"))
             }
-        } catch {
-            logging.error("Login attempt failed", error: error)
-            await MainActor.run {
-                cleanup()
-                oidcParams.onError(NativeSDKError.unknownError(source: error))
-            }
+            return
+        }
+
+        try await session.update(tokenResponse: tokenResponse)
+
+        logging.xEventId = nil
+        logging.info("Login successful")
+        await MainActor.run {
+            cleanup()
+            oidcParams.onSuccess()
         }
     }
 
-    private func refreshTokensIfNeeded() async throws {
+    private func refreshTokensIfNeeded() async {
         logging.debug("Attempting to refresh token")
 
         guard let profile = session.profile else {

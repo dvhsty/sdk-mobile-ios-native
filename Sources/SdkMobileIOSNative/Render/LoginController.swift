@@ -31,7 +31,7 @@ public class LoginController: ObservableObject {
 
         if let finalizeUrl = screen.finalizeUrl {
             logging.debug("Finalizing login flow")
-            try await nativeSDK.continueFlow(uri: URL(string: finalizeUrl)!)
+            try await nativeSDK.finalizeFlow(uri: URL(string: finalizeUrl)!)
             return
         }
 
@@ -44,7 +44,7 @@ public class LoginController: ObservableObject {
                 prefersEphemeralWebBrowserSession: oidcParams.prefersEphemeralWebBrowserSession
             ) { redirectURLScheme in
                 Task {
-                    try await self.nativeSDK.continueFlow(uri: redirectURLScheme)
+                    try await self.nativeSDK.finalizeFlow(uri: redirectURLScheme)
                 }
             } errorCallback: { error in
                 if let error = error as? NSError {

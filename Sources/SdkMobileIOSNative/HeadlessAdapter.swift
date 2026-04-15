@@ -45,7 +45,7 @@ public class HeadlessAdapter {
 
     public func initialize() {
         let screen = getScreen()
-        precondition(screen == nil, "Expected screen to be available when HeadlessAdapter.initialize() is called.")
+        precondition(screen != nil, "Expected screen to be available when HeadlessAdapter.initialize() is called.")
         delegate.renderScreen(screen: screen!)
     }
 
