@@ -123,7 +123,7 @@ public class NativeSDK {
 
             guard let sessionId = parameters["session_id"] else {
                 logging.info("Attempting to continue flow - missing session ID")
-                try await exchangeCodeForToken(oidcParams: oidcParams, queryParameters: parameters)
+                try await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
                 return
             }
             logging.info("Session ID present, creating loginController")
@@ -149,7 +149,12 @@ public class NativeSDK {
         } catch {
             logging.error("Failed to log in", error: error)
             cleanup()
-            onError(NativeSDKError.unknownError(source: error))
+            switch error {
+            case is NativeSDKError:
+                onError(error)
+            default:
+                onError(NativeSDKError.unknownError(source: error))
+            }
         }
     }
 
@@ -311,14 +316,15 @@ public class NativeSDK {
             entryFlowTask.continuation.resume(throwing: CancellationError())
         }
 
-        // TODO: retest cancellation flows
+        guard let loginController = loginController else {
+            return
+        }
+
         Task { @MainActor in
-            // check if locingController is still
-            if let error = error,
-               let oidcParams = self.loginController?.oidcParams {
-                oidcParams.onError(error)
-            }
             cleanup()
+            if let error = error {
+                loginController.oidcParams.onError(error)
+            }
         }
     }
 
@@ -397,7 +403,7 @@ public class NativeSDK {
 
         do {
             let parameters = try await oidcHandlerService.handleCall(url: uri)
-            try await exchangeCodeForToken(oidcParams: oidcParams, queryParameters: parameters)
+            try await continueFlow(oidcParams: oidcParams, queryParameters: parameters)
         } catch {
             await MainActor.run {
                 cleanup()
@@ -411,7 +417,7 @@ public class NativeSDK {
         }
     }
 
-    private func exchangeCodeForToken(oidcParams: OidcParams, queryParameters: [String: String]) async throws {
+    private func continueFlow(oidcParams: OidcParams, queryParameters: [String: String]) async throws {
         if let loginController = loginController, let sessionId = queryParameters["session_id"] {
             logging.info("Attempting to initialize loginController")
             try await loginController.initialize()
@@ -430,7 +436,7 @@ public class NativeSDK {
         }
 
         guard let state = queryParameters["state"] else {
-            throw NativeSDKError.technical(message: "Parameter `state` missing from response")
+            throw NativeSDKError.invalidCallback(reason: "Parameter `state` missing from response")
         }
 
         if state != oidcParams.state {
@@ -438,7 +444,7 @@ public class NativeSDK {
         }
 
         guard let code = queryParameters["code"] else {
-            throw NativeSDKError.technical(message: "Parameter `code` missing from response")
+            throw NativeSDKError.invalidCallback(reason: "Parameter `code` missing from response")
         }
 
         let tokenResponse = try await oidcHandlerService.tokenExchange(
@@ -455,14 +461,9 @@ public class NativeSDK {
             throw NativeSDKError.technical(message: "Nonce missing from response")
         }
 
-        if nonce != oidcParams.nonce {
+        guard nonce == oidcParams.nonce else {
             logging.debug("Nonce param did not match expected value")
-            await MainActor.run {
-                cleanup()
-                oidcParams
-                    .onError(NativeSDKError.invalidCallback(reason: "Nonce param did not matched expected value"))
-            }
-            return
+            throw NativeSDKError.technical(message: "Nonce param did not matched expected value")
         }
 
         try await session.update(tokenResponse: tokenResponse)

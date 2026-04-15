@@ -27,30 +27,28 @@ public class HeadlessAdapter {
                         return
                     }
 
-                    if let newScreen = self.getScreen() {
-                        if
-                            currentScreen?.screen == newScreen.screen,
-                            currentScreen?.forms == newScreen.forms,
-                            currentScreen?.layout == newScreen.layout,
-                            currentScreen?.messages != newScreen.messages {
-                            delegate.refreshScreen(screen: newScreen)
-                            return
-                        }
-                        delegate.renderScreen(screen: newScreen)
+                    let newScreen = self.getScreen()
+                    if
+                        currentScreen.screen == newScreen.screen,
+                        currentScreen.forms == newScreen.forms,
+                        currentScreen.layout == newScreen.layout,
+                        currentScreen.messages != newScreen.messages {
+                        delegate.refreshScreen(screen: newScreen)
+                        return
                     }
+                    delegate.renderScreen(screen: newScreen)
                 }
             }
             .store(in: &cancellables)
     }
 
     public func initialize() {
-        let screen = getScreen()
-        precondition(screen != nil, "Expected screen to be available when HeadlessAdapter.initialize() is called.")
-        delegate.renderScreen(screen: screen!)
+        delegate.renderScreen(screen: getScreen())
     }
 
-    public func getScreen() -> Screen? {
-        return loginController.screen
+    public func getScreen() -> Screen {
+        precondition(loginController.screen != nil, "Expected screen to be available.")
+        return loginController.screen!
     }
 
     public func errorMessage(formId: String, widgetId: String) -> String? {
